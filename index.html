@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LVGL Visual Designer for ESPHome</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/monokai.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/lint/lint.min.css">
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <!-- Toolbar -->
+    <div id="toolbar">
+        <div class="toolbar-left">
+            <span class="app-title">LVGL Designer <small>for ESPHome</small></span>
+        </div>
+        <div class="toolbar-center">
+            <button id="btn-undo" title="Undo (Ctrl+Z)">&#8630; Undo</button>
+            <button id="btn-redo" title="Redo (Ctrl+Y)">&#8631; Redo</button>
+            <span class="toolbar-sep"></span>
+            <button id="btn-delete" title="Delete Selected (Del)">&#128465; Delete</button>
+            <button id="btn-duplicate" title="Duplicate (Ctrl+D)">&#9903; Duplicate</button>
+            <span class="toolbar-sep"></span>
+            <label>Display:
+                <select id="display-size">
+                    <option value="320x240">320x240 (QVGA)</option>
+                    <option value="480x320" selected>480x320 (HVGA)</option>
+                    <option value="800x480">800x480 (WVGA)</option>
+                    <option value="240x240">240x240 (Square)</option>
+                    <option value="128x128">128x128 (Small)</option>
+                    <option value="custom">Custom...</option>
+                </select>
+            </label>
+        </div>
+        <div class="toolbar-right">
+            <button id="btn-validate" title="Validate YAML">&#10003; Validate</button>
+            <button id="btn-export" title="Export YAML">&#128190; Export</button>
+            <button id="btn-import" title="Import YAML">&#128194; Import</button>
+        </div>
+    </div>
+
+    <!-- Main Layout -->
+    <div id="main-container">
+        <!-- Left Panel: Widget Palette -->
+        <div id="panel-left" class="panel">
+            <div class="panel-header">
+                <span>Widgets</span>
+                <input type="text" id="widget-search" placeholder="Search widgets...">
+            </div>
+            <div id="widget-palette" class="panel-body">
+                <!-- Widget categories populated by JS -->
+            </div>
+        </div>
+
+        <!-- Center: Canvas + YAML Editor -->
+        <div id="panel-center">
+            <!-- Canvas Area -->
+            <div id="canvas-container">
+                <div id="canvas-header">
+                    <span id="page-tabs">
+                        <!-- Page tabs populated by JS -->
+                    </span>
+                    <button id="btn-add-page" title="Add Page">+ Page</button>
+                </div>
+                <div id="canvas-wrapper">
+                    <div id="canvas" tabindex="0">
+                        <!-- Widgets rendered here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- YAML Editor (resizable) -->
+            <div id="yaml-panel">
+                <div id="yaml-resize-handle"></div>
+                <div id="yaml-header">
+                    <span>YAML Editor</span>
+                    <div id="yaml-status">
+                        <span id="yaml-status-icon" class="status-ok">&#10003;</span>
+                        <span id="yaml-status-text">Valid</span>
+                    </div>
+                    <button id="btn-yaml-apply" title="Apply YAML changes to canvas">Apply</button>
+                    <button id="btn-yaml-format" title="Format YAML">Format</button>
+                    <button id="btn-yaml-toggle" title="Toggle YAML panel">&#9660;</button>
+                </div>
+                <div id="yaml-editor-container">
+                    <textarea id="yaml-editor"></textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel: Properties -->
+        <div id="panel-right" class="panel">
+            <div class="panel-header">
+                <span id="props-title">Properties</span>
+            </div>
+            <div id="properties-panel" class="panel-body">
+                <div id="no-selection">Select a widget to edit its properties</div>
+                <!-- Properties populated by JS -->
+            </div>
+            <!-- Widget Tree -->
+            <div class="panel-header" style="border-top: 1px solid #444;">
+                <span>Widget Tree</span>
+            </div>
+            <div id="widget-tree" class="panel-body">
+                <!-- Tree populated by JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Validation Modal -->
+    <div id="validation-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span>YAML Validation Results</span>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body" id="validation-results"></div>
+        </div>
+    </div>
+
+    <!-- Import Modal -->
+    <div id="import-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span>Import YAML</span>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <textarea id="import-textarea" placeholder="Paste your ESPHome LVGL YAML here..."></textarea>
+                <div class="modal-actions">
+                    <button id="btn-import-confirm">Import</button>
+                    <button class="btn-cancel modal-close">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden file input for import -->
+    <input type="file" id="file-input" accept=".yaml,.yml" style="display:none">
+
+    <!-- External Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/yaml/yaml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/lint/lint.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/lint/yaml-lint.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/foldcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/foldgutter.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/indent-fold.min.js"></script>
+
+    <!-- Application Scripts -->
+    <script src="js/widgets.js"></script>
+    <script src="js/renderer.js"></script>
+    <script src="js/designer.js"></script>
+    <script src="js/yaml-engine.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
