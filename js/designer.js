@@ -99,6 +99,7 @@ const Designer = (() => {
             height: def.defaultSize.height,
             properties: { ...LVGLWidgets.getDefaultProperties(type) },
             styles: LVGLWidgets.getDefaultStyles(type),
+            events: {},
             children: [],
         };
 
@@ -209,6 +210,49 @@ const Designer = (() => {
             delete widget.styles[part][prop];
         } else {
             widget.styles[part][prop] = value;
+        }
+        renderAll();
+        notifyChange();
+    }
+
+    // ---- Event/Action Management ----
+    function addEventAction(widgetId, eventName, actionType) {
+        const page = getCurrentPage();
+        const widget = findWidgetById(widgetId, page.widgets);
+        if (!widget) return;
+        pushUndo();
+        if (!widget.events) widget.events = {};
+        if (!widget.events[eventName]) widget.events[eventName] = [];
+        const actionDef = LVGLWidgets.ACTION_TYPES[actionType];
+        const fields = {};
+        if (actionDef) {
+            for (const [key, fDef] of Object.entries(actionDef.fields)) {
+                fields[key] = '';
+            }
+        }
+        widget.events[eventName].push({ type: actionType, fields });
+        renderAll();
+        notifyChange();
+    }
+
+    function updateEventAction(widgetId, eventName, actionIndex, fieldName, value) {
+        const page = getCurrentPage();
+        const widget = findWidgetById(widgetId, page.widgets);
+        if (!widget?.events?.[eventName]?.[actionIndex]) return;
+        pushUndo();
+        widget.events[eventName][actionIndex].fields[fieldName] = value;
+        renderAll();
+        notifyChange();
+    }
+
+    function removeEventAction(widgetId, eventName, actionIndex) {
+        const page = getCurrentPage();
+        const widget = findWidgetById(widgetId, page.widgets);
+        if (!widget?.events?.[eventName]) return;
+        pushUndo();
+        widget.events[eventName].splice(actionIndex, 1);
+        if (widget.events[eventName].length === 0) {
+            delete widget.events[eventName];
         }
         renderAll();
         notifyChange();
@@ -586,6 +630,57 @@ const Designer = (() => {
             }
         }
 
+        // Events section
+        const applicableEvents = LVGLWidgets.getEventsForWidget(widget.type);
+        html += `<div class="prop-section">`;
+        html += `<div class="prop-section-header">Events / Actions</div>`;
+        html += `<div class="prop-section-body">`;
+
+        // Show existing events
+        if (widget.events) {
+            for (const [eventName, actions] of Object.entries(widget.events)) {
+                if (!actions || actions.length === 0) continue;
+                html += `<div style="margin:4px 0 2px 6px;font-size:11px;color:var(--accent);font-weight:600">${eventName}</div>`;
+                actions.forEach((action, ai) => {
+                    const actionDef = LVGLWidgets.ACTION_TYPES[action.type];
+                    html += `<div style="margin:2px 6px;padding:6px;background:var(--bg-surface);border-radius:4px;font-size:11px">`;
+                    html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">`;
+                    html += `<span style="color:var(--text-secondary);font-weight:600">${actionDef?.label || action.type}</span>`;
+                    html += `<button data-remove-action="${eventName}:${ai}" style="padding:1px 5px;font-size:10px">&times;</button>`;
+                    html += `</div>`;
+                    if (actionDef) {
+                        for (const [fKey, fDef] of Object.entries(actionDef.fields)) {
+                            const fVal = action.fields?.[fKey] ?? '';
+                            html += `<div class="prop-row"><span class="prop-label">${fDef.label || fKey}</span><div class="prop-input">`;
+                            if (fDef.type === 'text' || fDef.type === 'yaml_map') {
+                                html += `<textarea data-event-field="${eventName}:${ai}:${fKey}" rows="2">${escapeHtml(fVal)}</textarea>`;
+                            } else if (fDef.type === 'enum' && fDef.options) {
+                                html += `<select data-event-field="${eventName}:${ai}:${fKey}">`;
+                                for (const o of fDef.options) {
+                                    html += `<option value="${o}" ${o === fVal ? 'selected' : ''}>${o || '(none)'}</option>`;
+                                }
+                                html += `</select>`;
+                            } else {
+                                html += `<input type="text" value="${escapeAttr(String(fVal))}" data-event-field="${eventName}:${ai}:${fKey}">`;
+                            }
+                            html += `</div></div>`;
+                        }
+                    }
+                    html += `</div>`;
+                });
+            }
+        }
+
+        // Add event button
+        const eventOpts = Object.entries(applicableEvents).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('');
+        const actionOpts = Object.entries(LVGLWidgets.ACTION_TYPES).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('');
+        html += `<div style="margin:6px;display:flex;flex-direction:column;gap:4px">`;
+        html += `<div style="display:flex;gap:4px"><select id="add-event-select" style="flex:1;font-size:10px">${eventOpts}</select>`;
+        html += `<select id="add-action-select" style="flex:1;font-size:10px">${actionOpts}</select></div>`;
+        html += `<button id="btn-add-event-action" style="font-size:11px">+ Add Action</button>`;
+        html += `</div>`;
+        html += `</div></div>`;
+
         propertiesPanel.innerHTML = html;
         attachPropertyEvents();
     }
@@ -717,6 +812,36 @@ const Designer = (() => {
                 if (body) body.style.display = header.classList.contains('collapsed') ? 'none' : '';
             });
         });
+
+        // Event action fields
+        propertiesPanel.querySelectorAll('[data-event-field]').forEach(input => {
+            const handler = (e) => {
+                const [eventName, aiStr, fieldName] = e.target.dataset.eventField.split(':');
+                updateEventAction(state.selectedWidgetId, eventName, parseInt(aiStr), fieldName, e.target.value);
+            };
+            input.addEventListener('change', handler);
+            if (input.tagName === 'TEXTAREA') input.addEventListener('input', handler);
+        });
+
+        // Remove action buttons
+        propertiesPanel.querySelectorAll('[data-remove-action]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const [eventName, aiStr] = e.target.dataset.removeAction.split(':');
+                removeEventAction(state.selectedWidgetId, eventName, parseInt(aiStr));
+            });
+        });
+
+        // Add event action button
+        const addBtn = document.getElementById('btn-add-event-action');
+        if (addBtn) {
+            addBtn.addEventListener('click', () => {
+                const eventSel = document.getElementById('add-event-select');
+                const actionSel = document.getElementById('add-action-select');
+                if (eventSel && actionSel && state.selectedWidgetId) {
+                    addEventAction(state.selectedWidgetId, eventSel.value, actionSel.value);
+                }
+            });
+        }
     }
 
     // ---- Widget Tree ----
@@ -838,6 +963,9 @@ const Designer = (() => {
         duplicateWidget,
         updateWidgetProperty,
         updateWidgetStyle,
+        addEventAction,
+        updateEventAction,
+        removeEventAction,
         undo,
         redo,
         addPage,

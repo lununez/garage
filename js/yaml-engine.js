@@ -137,12 +137,54 @@ const YAMLEngine = (() => {
             }
         }
 
+        // Events/Actions
+        if (widget.events) {
+            for (const [eventName, actions] of Object.entries(widget.events)) {
+                if (actions && actions.length > 0) {
+                    inner[eventName] = actions.map(a => actionToYAML(a));
+                }
+            }
+        }
+
         // Children
         if (widget.children && widget.children.length > 0) {
             inner.widgets = widget.children.map(c => widgetToYAML(c));
         }
 
         obj[widget.type] = inner;
+        return obj;
+    }
+
+    /**
+     * Convert an action instance to YAML-compatible object.
+     */
+    function actionToYAML(action) {
+        if (action.type === 'lambda') {
+            return { lambda: action.fields?.code || '' };
+        }
+
+        const obj = {};
+        const actionObj = {};
+
+        for (const [key, val] of Object.entries(action.fields || {})) {
+            if (val !== null && val !== undefined && val !== '') {
+                // Check if value contains !lambda
+                if (typeof val === 'string' && val.includes('!lambda')) {
+                    actionObj[key] = val;
+                } else if (key === 'data' && typeof val === 'string') {
+                    // Parse data as YAML map
+                    try {
+                        actionObj[key] = jsyaml.load(val) || {};
+                    } catch (e) {
+                        actionObj[key] = val;
+                    }
+                } else {
+                    actionObj[key] = val;
+                }
+            }
+        }
+
+        obj[action.type] = actionObj;
         return obj;
     }
 
@@ -257,6 +299,16 @@ const YAMLEngine = (() => {
             }
         }
 
+        // Parse events/actions
+        widget.events = {};
+        const eventNames = Object.keys(LVGLWidgets.EVENTS);
+        for (const eventName of eventNames) {
+            if (props[eventName]) {
+                const rawActions = Array.isArray(props[eventName]) ? props[eventName] : [props[eventName]];
+                widget.events[eventName] = rawActions.map(a => parseActionYAML(a)).filter(Boolean);
+            }
+        }
+
         // Parse children
         if (props.widgets && Array.isArray(props.widgets)) {
             for (const childYaml of props.widgets) {
@@ -266,6 +318,31 @@ const YAMLEngine = (() => {
         }
 
         return widget;
+    }
+
+    /**
+     * Parse a single action from YAML format.
+     */
+    function parseActionYAML(actionYaml) {
+        if (!actionYaml || typeof actionYaml !== 'object') return null;
+
+        // Handle lambda shorthand
+        if (actionYaml.lambda !== undefined) {
+            return { type: 'lambda', fields: { code: actionYaml.lambda } };
+        }
+
+        const type = Object.keys(actionYaml)[0];
+        const fields = actionYaml[type] || {};
+
+        const result = { type, fields: {} };
+        for (const [key, val] of Object.entries(fields)) {
+            if (key === 'data' && typeof val === 'object') {
+                result.fields[key] = jsyaml.dump(val, { indent: 2 }).trim();
+            } else {
+                result.fields[key] = val;
+            }
+        }
+        return result;
     }
 
     /**

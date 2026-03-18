@@ -28,12 +28,16 @@
             },
         });
 
+        // Initialize Preview Mode
+        PreviewMode.init();
+
         // Build UI
         buildWidgetPalette();
         setupToolbarEvents();
         setupYAMLPanelEvents();
         setupModals();
         setupDisplaySizeSelector();
+        setupModeToggle();
 
         // Initial YAML sync
         YAMLEngine.updateEditorFromState(Designer.getState());
@@ -279,6 +283,38 @@
         }
 
         modal.classList.remove('hidden');
+    }
+
+    // ---- Mode Toggle (Design / Preview) ----
+    function setupModeToggle() {
+        const designBtn = document.getElementById('btn-mode-design');
+        const previewBtn = document.getElementById('btn-mode-preview');
+
+        if (designBtn && previewBtn) {
+            designBtn.addEventListener('click', () => {
+                if (!PreviewMode.isActive()) return;
+                designBtn.classList.add('active');
+                previewBtn.classList.remove('active');
+                PreviewMode.exit();
+                // Re-enable design UI elements
+                document.getElementById('panel-left').style.opacity = '';
+                document.getElementById('panel-left').style.pointerEvents = '';
+                document.getElementById('panel-right').style.opacity = '';
+                document.getElementById('panel-right').style.pointerEvents = '';
+            });
+
+            previewBtn.addEventListener('click', () => {
+                if (PreviewMode.isActive()) return;
+                previewBtn.classList.add('active');
+                designBtn.classList.remove('active');
+                PreviewMode.enter();
+                // Dim the side panels in preview mode
+                document.getElementById('panel-left').style.opacity = '0.4';
+                document.getElementById('panel-left').style.pointerEvents = 'none';
+                document.getElementById('panel-right').style.opacity = '0.4';
+                document.getElementById('panel-right').style.pointerEvents = 'none';
+            });
+        }
     }
 
     function escapeHtml(str) {

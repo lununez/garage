@@ -146,12 +146,22 @@ const LVGLRenderer = (() => {
             const vertical = isVertical(widget);
             el.className = `lvgl-widget lvgl-slider ${vertical ? 'vertical' : 'horizontal'}`;
 
+            // Track fills the entire widget area
             const track = document.createElement('div');
             track.className = 'lvgl-slider-track';
+            track.style.width = '100%';
+            track.style.height = '100%';
+            track.style.position = 'relative';
+            track.style.borderRadius = '4px';
+            track.style.background = '#404060';
+            track.style.overflow = 'visible';
             applyStyles(track, widget.styles?.main);
 
             const indicator = document.createElement('div');
             indicator.className = 'lvgl-slider-indicator';
+            indicator.style.position = 'absolute';
+            indicator.style.borderRadius = 'inherit';
+            indicator.style.background = '#2196F3';
             applyStyles(indicator, widget.styles?.indicator);
 
             const min = widget.properties.min_value ?? 0;
@@ -160,8 +170,14 @@ const LVGLRenderer = (() => {
             const pct = Math.max(0, Math.min(100, ((val - min) / (max - min)) * 100));
 
             if (vertical) {
+                indicator.style.left = '0';
+                indicator.style.bottom = '0';
+                indicator.style.width = '100%';
                 indicator.style.height = pct + '%';
             } else {
+                indicator.style.top = '0';
+                indicator.style.left = '0';
+                indicator.style.height = '100%';
                 indicator.style.width = pct + '%';
             }
             track.appendChild(indicator);
@@ -171,13 +187,18 @@ const LVGLRenderer = (() => {
             if (knobStyle !== 'none') {
                 const knob = document.createElement('div');
                 knob.className = 'lvgl-slider-knob';
+                knob.style.position = 'absolute';
+                knob.style.zIndex = '2';
 
                 if (knobStyle === 'bar') {
                     knob.classList.add('knob-bar');
-                    const kw = widget.properties.knob_width || (vertical ? '80%' : 4);
-                    const kh = widget.properties.knob_height || (vertical ? 4 : '80%');
-                    knob.style.width = typeof kw === 'number' ? kw + 'px' : kw;
-                    knob.style.height = typeof kh === 'number' ? kh + 'px' : kh;
+                    const kw = widget.properties.knob_width || (vertical ? widget.width + 6 : 4);
+                    const kh = widget.properties.knob_height || (vertical ? 4 : widget.height + 6);
+                    knob.style.width = (typeof kw === 'number' ? kw + 'px' : kw);
+                    knob.style.height = (typeof kh === 'number' ? kh + 'px' : kh);
+                    knob.style.borderRadius = '2px';
+                    knob.style.background = '#fff';
+                    knob.style.boxShadow = '0 1px 4px rgba(0,0,0,0.4)';
                 } else if (knobStyle === 'image') {
                     knob.classList.add('knob-image');
                     if (widget.properties.knob_image) {
@@ -185,26 +206,38 @@ const LVGLRenderer = (() => {
                     }
                     const kw = widget.properties.knob_width || 24;
                     const kh = widget.properties.knob_height || 24;
-                    knob.style.width = typeof kw === 'number' ? kw + 'px' : kw;
-                    knob.style.height = typeof kh === 'number' ? kh + 'px' : kh;
+                    knob.style.width = (typeof kw === 'number' ? kw + 'px' : kw);
+                    knob.style.height = (typeof kh === 'number' ? kh + 'px' : kh);
+                    knob.style.backgroundSize = 'contain';
+                    knob.style.backgroundRepeat = 'no-repeat';
+                    knob.style.backgroundPosition = 'center';
                 } else {
                     // circle (default)
-                    const kSize = widget.properties.knob_width || (vertical ? Math.min(widget.width * 1.5, 24) : Math.min(widget.height * 1.5, 24));
+                    const kSize = widget.properties.knob_width || (vertical ? Math.max(widget.width + 6, 20) : Math.max(widget.height + 6, 20));
                     knob.style.width = kSize + 'px';
                     knob.style.height = kSize + 'px';
+                    knob.style.borderRadius = '50%';
+                    knob.style.background = '#fff';
+                    knob.style.boxShadow = '0 1px 4px rgba(0,0,0,0.4)';
                 }
 
                 applyStyles(knob, widget.styles?.knob);
 
-                // Position knob
+                // Position knob centered on the track
                 if (vertical) {
+                    const knobH = parseFloat(knob.style.height) || 20;
                     const trackH = widget.height;
-                    const knobPos = trackH - (pct / 100 * trackH);
+                    const knobPos = trackH - (pct / 100 * trackH) - knobH / 2;
                     knob.style.top = knobPos + 'px';
+                    knob.style.left = '50%';
+                    knob.style.transform = 'translateX(-50%)';
                 } else {
+                    const knobW = parseFloat(knob.style.width) || 20;
                     const trackW = widget.width;
-                    const knobPos = pct / 100 * trackW;
+                    const knobPos = (pct / 100 * trackW) - knobW / 2;
                     knob.style.left = knobPos + 'px';
+                    knob.style.top = '50%';
+                    knob.style.transform = 'translateY(-50%)';
                 }
 
                 track.appendChild(knob);

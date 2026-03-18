@@ -69,6 +69,102 @@ const LVGLWidgets = (() => {
     // ---- Widget State Properties ----
     const STATE_STYLES = ['DEFAULT', 'PRESSED', 'FOCUSED', 'DISABLED', 'CHECKED'];
 
+    // ---- ESPHome Event/Action Definitions ----
+    // Events that LVGL widgets can trigger, with associated ESPHome actions
+    const EVENTS = {
+        on_click:         { label: 'On Click', widgets: ['button', 'obj', 'image', 'label', 'buttonmatrix'] },
+        on_press:         { label: 'On Press', widgets: '*' },
+        on_release:       { label: 'On Release', widgets: '*' },
+        on_long_press:    { label: 'On Long Press', widgets: '*' },
+        on_long_press_repeat: { label: 'On Long Press Repeat', widgets: '*' },
+        on_short_click:   { label: 'On Short Click', widgets: '*' },
+        on_value_change:  { label: 'On Value Change', widgets: ['slider', 'arc', 'bar', 'roller', 'dropdown', 'spinbox', 'switch', 'checkbox'] },
+        on_focus:         { label: 'On Focus', widgets: '*' },
+        on_defocus:       { label: 'On Defocus', widgets: '*' },
+    };
+
+    // ESPHome action types that can be used in event handlers
+    const ACTION_TYPES = {
+        'homeassistant.action': {
+            label: 'Home Assistant Action',
+            fields: {
+                action: { type: 'string', label: 'Action (e.g. light.turn_on)', required: true },
+                data: { type: 'yaml_map', label: 'Data (YAML key: value pairs)' },
+            },
+        },
+        'homeassistant.service': {
+            label: 'Home Assistant Service (legacy)',
+            fields: {
+                service: { type: 'string', label: 'Service (e.g. light.turn_on)', required: true },
+                data: { type: 'yaml_map', label: 'Data (YAML key: value pairs)' },
+            },
+        },
+        'logger.log': {
+            label: 'Log Message',
+            fields: {
+                format: { type: 'string', label: 'Format String', required: true },
+                args: { type: 'string', label: 'Arguments' },
+                level: { type: 'enum', label: 'Level', options: ['DEBUG', 'INFO', 'WARN', 'ERROR'] },
+            },
+        },
+        'lvgl.widget.update': {
+            label: 'Update LVGL Widget',
+            fields: {
+                id: { type: 'string', label: 'Target Widget ID', required: true },
+            },
+        },
+        'lvgl.page.show': {
+            label: 'Show LVGL Page',
+            fields: {
+                id: { type: 'string', label: 'Page ID', required: true },
+                animation: { type: 'enum', label: 'Animation', options: ['', 'NONE', 'MOVE_LEFT', 'MOVE_RIGHT', 'FADE_IN'] },
+            },
+        },
+        'light.turn_on': {
+            label: 'Turn On Light',
+            fields: {
+                id: { type: 'string', label: 'Light ID', required: true },
+                brightness: { type: 'string', label: 'Brightness (0-255 or lambda)' },
+                color_temp: { type: 'string', label: 'Color Temperature' },
+                red: { type: 'string', label: 'Red (0-1)' },
+                green: { type: 'string', label: 'Green (0-1)' },
+                blue: { type: 'string', label: 'Blue (0-1)' },
+                transition_length: { type: 'string', label: 'Transition (ms)' },
+            },
+        },
+        'light.turn_off': {
+            label: 'Turn Off Light',
+            fields: {
+                id: { type: 'string', label: 'Light ID', required: true },
+            },
+        },
+        'switch.turn_on': {
+            label: 'Turn On Switch',
+            fields: { id: { type: 'string', label: 'Switch ID', required: true } },
+        },
+        'switch.turn_off': {
+            label: 'Turn Off Switch',
+            fields: { id: { type: 'string', label: 'Switch ID', required: true } },
+        },
+        'switch.toggle': {
+            label: 'Toggle Switch',
+            fields: { id: { type: 'string', label: 'Switch ID', required: true } },
+        },
+        'output.set_level': {
+            label: 'Set Output Level',
+            fields: {
+                id: { type: 'string', label: 'Output ID', required: true },
+                level: { type: 'string', label: 'Level (0-1 or lambda)' },
+            },
+        },
+        'lambda': {
+            label: 'Lambda (C++ code)',
+            fields: {
+                code: { type: 'text', label: 'C++ code' },
+            },
+        },
+    };
+
     // ---- Widget Definitions ----
     const WIDGETS = {
 
@@ -493,6 +589,8 @@ const LVGLWidgets = (() => {
         STYLE_PROPS,
         LAYOUT_PROPS,
         STATE_STYLES,
+        EVENTS,
+        ACTION_TYPES,
 
         getWidgetDef(type) {
             return WIDGETS[type] || null;
@@ -540,6 +638,16 @@ const LVGLWidgets = (() => {
         canContainChildren(type) {
             const def = WIDGETS[type];
             return def ? def.canContain : false;
+        },
+
+        getEventsForWidget(type) {
+            const result = {};
+            for (const [event, def] of Object.entries(EVENTS)) {
+                if (def.widgets === '*' || def.widgets.includes(type)) {
+                    result[event] = def;
+                }
+            }
+            return result;
         },
     };
 })();
