@@ -12,6 +12,34 @@ const YAMLEngine = (() => {
     let onApply = null;
     let validationTimer = null;
 
+    // ---- Custom YAML Schema for ESPHome tags ----
+    // ESPHome uses custom YAML tags like !lambda, !secret, !include, etc.
+    // We define them so js-yaml can parse without errors, preserving the values.
+
+    const ESPHOME_TAGS = ['lambda', 'secret', 'include', 'extend', 'remove'];
+    const customTypes = ESPHOME_TAGS.map(tag =>
+        new jsyaml.Type('!' + tag, {
+            kind: 'scalar',
+            construct: (data) => `!${tag} ${data}`,
+            represent: (data) => data,
+        })
+    );
+    // Also handle !lambda with mapping kind (for multi-line lambdas)
+    customTypes.push(new jsyaml.Type('!lambda', {
+        kind: 'mapping',
+        construct: (data) => ({ __lambda: true, ...data }),
+    }));
+
+    const ESPHOME_SCHEMA = jsyaml.DEFAULT_SCHEMA.extend(customTypes);
+
+    function yamlLoad(str) {
+        return jsyaml.load(str, { schema: ESPHOME_SCHEMA });
+    }
+
+    function yamlDump(obj, opts) {
+        return jsyaml.dump(obj, { schema: ESPHOME_SCHEMA, ...opts });
+    }
+
     // ---- Initialization ----
     function init(options = {}) {
         onApply = options.onApply || null;
@@ -72,7 +100,7 @@ const YAMLEngine = (() => {
             doc.lvgl.pages.push(pageObj);
         }
 
-        return jsyaml.dump(doc, {
+        return yamlDump(doc, {
             indent: 2,
             lineWidth: 120,
             noRefs: true,
@@ -174,7 +202,7 @@ const YAMLEngine = (() => {
                 } else if (key === 'data' && typeof val === 'string') {
                     // Parse data as YAML map
                     try {
-                        actionObj[key] = jsyaml.load(val) || {};
+                        actionObj[key] = yamlLoad(val) || {};
                     } catch (e) {
                         actionObj[key] = val;
                     }
@@ -205,7 +233,7 @@ const YAMLEngine = (() => {
      * Parse ESPHome LVGL YAML into designer state.
      */
     function parseYAML(yamlStr) {
-        const doc = jsyaml.load(yamlStr);
+        const doc = yamlLoad(yamlStr);
         if (!doc) throw new Error('Empty YAML document');
 
         const result = {
@@ -337,7 +365,7 @@ const YAMLEngine = (() => {
         const result = { type, fields: {} };
         for (const [key, val] of Object.entries(fields)) {
             if (key === 'data' && typeof val === 'object') {
-                result.fields[key] = jsyaml.dump(val, { indent: 2 }).trim();
+                result.fields[key] = yamlDump(val, { indent: 2 }).trim();
             } else {
                 result.fields[key] = val;
             }
@@ -372,7 +400,7 @@ const YAMLEngine = (() => {
         // 1. Parse check
         let doc;
         try {
-            doc = jsyaml.load(yamlStr);
+            doc = yamlLoad(yamlStr);
         } catch (e) {
             results.push({
                 type: 'error',
@@ -636,8 +664,8 @@ const YAMLEngine = (() => {
         if (!codeMirrorEditor) return;
         try {
             const yaml = codeMirrorEditor.getValue();
-            const doc = jsyaml.load(yaml);
-            const formatted = jsyaml.dump(doc, {
+            const doc = yamlLoad(yaml);
+            const formatted = yamlDump(doc, {
                 indent: 2,
                 lineWidth: 120,
                 noRefs: true,
