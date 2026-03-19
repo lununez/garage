@@ -132,15 +132,23 @@ const YAMLEngine = (() => {
         const def = LVGLWidgets.getWidgetDef(widget.type);
         if (def) {
             for (const [key, propDef] of Object.entries(def.properties)) {
+                // Skip designer-only properties (not valid in ESPHome YAML)
+                if (propDef.yamlExclude) continue;
+
                 const val = widget.properties[key];
                 if (val !== null && val !== undefined && val !== '' && val !== propDef.default) {
-                    // Handle multi-line text properties as arrays for ESPHome
-                    if (propDef.type === 'text' && typeof val === 'string' && val.includes('\n')) {
-                        if (key === 'options' || key === 'rows' || key === 'buttons' || key === 'tab_labels') {
-                            inner[key] = val;
-                        } else {
-                            inner[key] = val;
+                    // Property mapping (e.g. adjustable:false -> disabled:true)
+                    if (propDef.yamlMap) {
+                        const mappedVal = propDef.yamlInvert ? !val : val;
+                        // Only emit if the mapped value is truthy (e.g. disabled: true)
+                        if (mappedVal) {
+                            inner[propDef.yamlMap] = mappedVal;
                         }
+                        continue;
+                    }
+                    // Handle multi-line text properties
+                    if (propDef.type === 'text' && typeof val === 'string' && val.includes('\n')) {
+                        inner[key] = val;
                     } else {
                         inner[key] = val;
                     }
@@ -308,7 +316,11 @@ const YAMLEngine = (() => {
 
         // Parse widget-specific properties
         for (const [key, propDef] of Object.entries(def.properties)) {
-            if (props[key] !== undefined) {
+            // Reverse-map YAML keys (e.g. disabled -> adjustable)
+            if (propDef.yamlMap && props[propDef.yamlMap] !== undefined) {
+                const val = props[propDef.yamlMap];
+                widget.properties[key] = propDef.yamlInvert ? !val : val;
+            } else if (props[key] !== undefined) {
                 widget.properties[key] = props[key];
             } else if (propDef.default !== null && propDef.default !== undefined) {
                 widget.properties[key] = propDef.default;
