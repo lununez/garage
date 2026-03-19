@@ -798,11 +798,24 @@ label {
 /* Label */
 .lvgl-label {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
+    justify-content: flex-start;
     color: #fff;
     font-size: 14px;
     overflow: hidden;
     word-wrap: break-word;
+    white-space: pre-wrap;
+}
+
+/* MDI icons in labels */
+.lvgl-label .mdi-icon {
+    font-family: 'Material Design Icons', sans-serif;
+    font-style: normal;
+    font-weight: normal;
+    line-height: 1;
+    display: inline-block;
+    font-size: 1.2em;
+    vertical-align: middle;
 }
 
 /* Slider */

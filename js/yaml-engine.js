@@ -132,6 +132,16 @@ const YAMLEngine = (() => {
         const def = LVGLWidgets.getWidgetDef(widget.type);
         if (def) {
             for (const [key, propDef] of Object.entries(def.properties)) {
+                // Properties that map to style parts (e.g. text_align -> main.text_align)
+                if (propDef.isStyle) {
+                    const val = widget.properties[key];
+                    if (val !== null && val !== undefined && val !== '' && val !== propDef.default) {
+                        const part = propDef.stylePart || 'main';
+                        if (!inner[part]) inner[part] = {};
+                        inner[part][key] = val;
+                    }
+                    continue;
+                }
                 // Skip designer-only properties (not valid in ESPHome YAML)
                 if (propDef.yamlExclude) continue;
 

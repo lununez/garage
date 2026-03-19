@@ -101,6 +101,25 @@ const LVGLRenderer = (() => {
             s.outline = `${ow}px solid ${oc}`;
             if (styles.outline_pad) s.outlineOffset = styles.outline_pad + 'px';
         }
+
+        // Text alignment
+        if (styles.text_align) {
+            const alignMap = { LEFT: 'left', CENTER: 'center', RIGHT: 'right', AUTO: 'auto' };
+            s.textAlign = alignMap[styles.text_align] || styles.text_align;
+            // Also update flex alignment for flex-based widgets (labels, buttons)
+            const justifyMap = { LEFT: 'flex-start', CENTER: 'center', RIGHT: 'flex-end' };
+            if (justifyMap[styles.text_align]) s.justifyContent = justifyMap[styles.text_align];
+        }
+
+        // Text font size (parse from ESPHome font references or numeric sizes)
+        if (styles.text_font) {
+            const sizeMatch = String(styles.text_font).match(/(\d+)/);
+            if (sizeMatch) s.fontSize = sizeMatch[1] + 'px';
+        }
+
+        // Letter and line spacing
+        if (styles.text_letter_space != null) s.letterSpacing = styles.text_letter_space + 'px';
+        if (styles.text_line_space != null) s.lineHeight = (1.2 + styles.text_line_space / 14).toFixed(2);
     }
 
     /**
@@ -108,6 +127,57 @@ const LVGLRenderer = (() => {
      */
     function isVertical(widget) {
         return widget.height > widget.width;
+    }
+
+    /**
+     * Convert ESPHome LVGL unicode escapes (\U000FXXXX) to actual characters
+     * and render text with MDI icon support.
+     */
+    function renderLabelText(el, text) {
+        // Match ESPHome unicode escape sequences: \U000FXXXX (8-digit hex, MDI range)
+        // and also shorter forms like \uXXXX
+        const unicodePattern = /\\U([0-9A-Fa-f]{8})|\\u([0-9A-Fa-f]{4})/g;
+        const hasMdiCodes = unicodePattern.test(text);
+
+        if (!hasMdiCodes) {
+            el.textContent = text;
+            return;
+        }
+
+        // Reset lastIndex after test()
+        unicodePattern.lastIndex = 0;
+
+        // Split text into segments of plain text and unicode icons
+        let lastIdx = 0;
+        let match;
+        while ((match = unicodePattern.exec(text)) !== null) {
+            // Add plain text before this match
+            if (match.index > lastIdx) {
+                el.appendChild(document.createTextNode(text.substring(lastIdx, match.index)));
+            }
+
+            const codeHex = match[1] || match[2];
+            const codePoint = parseInt(codeHex, 16);
+            const char = String.fromCodePoint(codePoint);
+
+            // MDI icons are in the range U+F0001 - U+F1AF0 (Private Use Area)
+            const isMdi = codePoint >= 0xF0000 && codePoint <= 0xF2000;
+            if (isMdi) {
+                const iconSpan = document.createElement('span');
+                iconSpan.className = 'mdi-icon';
+                iconSpan.textContent = char;
+                el.appendChild(iconSpan);
+            } else {
+                el.appendChild(document.createTextNode(char));
+            }
+
+            lastIdx = match.index + match[0].length;
+        }
+
+        // Add remaining plain text
+        if (lastIdx < text.length) {
+            el.appendChild(document.createTextNode(text.substring(lastIdx)));
+        }
     }
 
     // ---- Widget Render Functions ----
@@ -118,10 +188,20 @@ const LVGLRenderer = (() => {
         label(widget) {
             const el = document.createElement('div');
             el.className = 'lvgl-widget lvgl-label';
-            el.textContent = widget.properties.text || 'Label';
+            const rawText = widget.properties.text || 'Label';
+            renderLabelText(el, rawText);
             applyStyles(el, widget.styles?.main);
             const tc = parseColor(widget.styles?.main?.text_color);
             if (tc) el.style.color = tc;
+
+            // Apply text_align from property (convenience shortcut)
+            const align = widget.properties.text_align || widget.styles?.main?.text_align;
+            if (align) {
+                const cssAlign = { LEFT: 'flex-start', CENTER: 'center', RIGHT: 'flex-end' };
+                el.style.justifyContent = cssAlign[align] || 'flex-start';
+                el.style.textAlign = align.toLowerCase();
+            }
+
             return el;
         },
 
@@ -133,7 +213,7 @@ const LVGLRenderer = (() => {
             if (widget.children && widget.children.length > 0) {
                 const childLabel = widget.children.find(c => c.type === 'label');
                 if (childLabel) {
-                    el.textContent = childLabel.properties?.text || '';
+                    renderLabelText(el, childLabel.properties?.text || '');
                 }
             } else {
                 el.textContent = 'Button';
