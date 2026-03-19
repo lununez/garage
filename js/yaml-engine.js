@@ -144,6 +144,8 @@ const YAMLEngine = (() => {
                 }
                 // Skip designer-only properties (not valid in ESPHome YAML)
                 if (propDef.yamlExclude) continue;
+                // Skip childLabel properties — they live on the child label widget
+                if (propDef.childLabel) continue;
 
                 const val = widget.properties[key];
                 if (val !== null && val !== undefined && val !== '' && val !== propDef.default) {
@@ -365,6 +367,8 @@ const YAMLEngine = (() => {
 
         // Parse widget-specific properties
         for (const [key, propDef] of Object.entries(def.properties)) {
+            // Skip childLabel properties — they live on the child label widget
+            if (propDef.childLabel) continue;
             // Reverse-map YAML keys (e.g. disabled -> adjustable)
             if (propDef.yamlMap && props[propDef.yamlMap] !== undefined) {
                 const val = props[propDef.yamlMap];

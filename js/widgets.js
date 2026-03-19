@@ -211,6 +211,7 @@ const LVGLWidgets = (() => {
             canContain: true,
             defaultSize: { width: 100, height: 40 },
             properties: {
+                text: { type: 'string', default: 'Button', label: 'Text', childLabel: true },
                 checkable: { type: 'boolean', default: false, label: 'Checkable' },
             },
             parts: ['main'],
@@ -617,6 +618,7 @@ const LVGLWidgets = (() => {
             if (!def) return {};
             const props = {};
             for (const [key, prop] of Object.entries(def.properties)) {
+                if (prop.childLabel) continue; // stored on child label, not widget
                 if (prop.default !== null && prop.default !== undefined) {
                     props[key] = prop.default;
                 }

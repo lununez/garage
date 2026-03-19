@@ -807,8 +807,8 @@ label {
     white-space: pre-wrap;
 }
 
-/* MDI icons in labels */
-.lvgl-label .mdi-icon {
+/* MDI icons in labels and buttons */
+.mdi-icon {
     font-family: 'Material Design Icons', sans-serif;
     font-style: normal;
     font-weight: normal;

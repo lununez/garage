@@ -103,6 +103,21 @@ const Designer = (() => {
             children: [],
         };
 
+        // Auto-create child label for buttons
+        if (type === 'button') {
+            widget.children.push({
+                id: generateId('label'),
+                type: 'label',
+                x: 0, y: 0,
+                width: def.defaultSize.width,
+                height: def.defaultSize.height,
+                properties: { text: 'Button' },
+                styles: {},
+                events: {},
+                children: [],
+            });
+        }
+
         const page = getCurrentPage();
         if (parentId) {
             const parent = findWidgetById(parentId, page.widgets);
@@ -191,6 +206,25 @@ const Designer = (() => {
         // Handle top-level position/size props
         if (['x', 'y', 'width', 'height'].includes(key)) {
             widget[key] = value;
+        } else if (key === 'text' && widget.type === 'button') {
+            // Sync button text to child label (create one if missing)
+            let childLabel = widget.children?.find(c => c.type === 'label');
+            if (!childLabel) {
+                childLabel = {
+                    id: generateId('label'),
+                    type: 'label',
+                    x: 0, y: 0,
+                    width: widget.width,
+                    height: widget.height,
+                    properties: { text: '' },
+                    styles: {},
+                    events: {},
+                    children: [],
+                };
+                if (!widget.children) widget.children = [];
+                widget.children.push(childLabel);
+            }
+            childLabel.properties.text = value;
         } else {
             widget.properties[key] = value;
         }
@@ -605,7 +639,12 @@ const Designer = (() => {
             html += `<div class="prop-section-header expanded">Properties</div>`;
             html += `<div class="prop-section-body">`;
             for (const [key, propDef] of Object.entries(def.properties)) {
-                const val = widget.properties[key] ?? propDef.default;
+                let val = widget.properties[key] ?? propDef.default;
+                // For button text, read from child label
+                if (propDef.childLabel && widget.type === 'button') {
+                    const childLabel = widget.children?.find(c => c.type === 'label');
+                    val = childLabel?.properties?.text ?? propDef.default;
+                }
                 html += propRow(propDef.label || key, renderPropInput(key, propDef, val));
             }
             html += `</div></div>`;
