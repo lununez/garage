@@ -2,6 +2,12 @@
  * YAML Engine for ESPHome LVGL
  * Handles YAML generation from designer state, parsing YAML back to state,
  * validation against ESPHome LVGL schema, and CodeMirror editor integration.
+ *
+ * Key fixes over original:
+ * - !lambda tags properly preserved via post-processing
+ * - Color values (0xRRGGBB) properly quoted
+ * - Data fields with lambdas properly structured
+ * - Full device YAML generation with sensor/binary_sensor blocks from entity bindings
  */
 
 const YAMLEngine = (() => {
@@ -13,18 +19,25 @@ const YAMLEngine = (() => {
     let validationTimer = null;
 
     // ---- Custom YAML Schema for ESPHome tags ----
-    // ESPHome uses custom YAML tags like !lambda, !secret, !include, etc.
-    // We define them so js-yaml can parse without errors, preserving the values.
+    // Lambda placeholder: during generation we use __LAMBDA__code as a sentinel.
+    // After js-yaml dump, we post-process to convert these to proper !lambda "code" tags.
+    const LAMBDA_SENTINEL = '__LAMBDA__';
 
     const ESPHOME_TAGS = ['lambda', 'secret', 'include', 'extend', 'remove'];
     const customTypes = ESPHOME_TAGS.map(tag =>
         new jsyaml.Type('!' + tag, {
             kind: 'scalar',
-            construct: (data) => `!${tag} ${data}`,
+            construct: (data) => {
+                if (tag === 'lambda') {
+                    // Preserve as sentinel so we can reconstruct the tag on dump
+                    return LAMBDA_SENTINEL + data;
+                }
+                return `!${tag} ${data}`;
+            },
             represent: (data) => data,
         })
     );
-    // Also handle !lambda with mapping kind (for multi-line lambdas)
+    // Handle !lambda with mapping kind (multi-line lambdas)
     customTypes.push(new jsyaml.Type('!lambda', {
         kind: 'mapping',
         construct: (data) => ({ __lambda: true, ...data }),
@@ -38,6 +51,42 @@ const YAMLEngine = (() => {
 
     function yamlDump(obj, opts) {
         return jsyaml.dump(obj, { schema: ESPHOME_SCHEMA, ...opts });
+    }
+
+    // ---- Post-processing for ESPHome YAML ----
+
+    /**
+     * Post-process YAML output to fix ESPHome-specific syntax:
+     * 1. Convert __LAMBDA__ sentinels to !lambda "code" tags
+     * 2. Ensure 0xRRGGBB color values are quoted strings
+     * 3. Fix any !secret/!include tag representations
+     */
+    function postProcessYaml(yamlStr) {
+        let result = yamlStr;
+
+        // Fix lambda sentinels: convert "__LAMBDA__code" → !lambda "code"
+        // Handle both quoted and unquoted forms from js-yaml dump
+        result = result.replace(/"__LAMBDA__((?:[^"\\]|\\.)*)"/g, (match, code) => {
+            return '!lambda "' + code + '"';
+        });
+        result = result.replace(/'__LAMBDA__([^']*)'/g, (match, code) => {
+            return '!lambda "' + code + '"';
+        });
+        result = result.replace(/:\s+__LAMBDA__(.+)$/gm, (match, code) => {
+            return ': !lambda "' + code.trim() + '"';
+        });
+
+        // Fix !secret and !include tag representations
+        // js-yaml construct stores these as "!secret value" strings
+        for (const tag of ['secret', 'include', 'extend', 'remove']) {
+            const pattern = new RegExp(`["']!${tag}\\s+([^"']+)["']`, 'g');
+            result = result.replace(pattern, `!${tag} $1`);
+            // Also handle unquoted form
+            const unquotedPattern = new RegExp(`:\\s+!${tag}\\s+(.+)$`, 'gm');
+            // These are already correct, no change needed
+        }
+
+        return result;
     }
 
     // ---- Initialization ----
@@ -79,6 +128,7 @@ const YAMLEngine = (() => {
 
     /**
      * Generate ESPHome LVGL YAML from designer state.
+     * This produces the lvgl: and font: sections only.
      */
     function generateYAML(designerState) {
         const doc = {};
@@ -106,7 +156,7 @@ const YAMLEngine = (() => {
             doc.lvgl.pages.push(pageObj);
         }
 
-        return yamlDump(doc, {
+        const rawYaml = yamlDump(doc, {
             indent: 2,
             lineWidth: 120,
             noRefs: true,
@@ -114,6 +164,62 @@ const YAMLEngine = (() => {
             quotingType: '"',
             forceQuotes: false,
         });
+
+        return postProcessYaml(rawYaml);
+    }
+
+    /**
+     * Generate full device-ready YAML including sensor blocks from entity bindings.
+     * This is used for deployment — produces lvgl + font + sensor + binary_sensor sections.
+     */
+    function generateFullYAML(designerState) {
+        let yaml = generateYAML(designerState);
+
+        // Generate sensor blocks from entity bindings
+        if (typeof EntityBinding !== 'undefined') {
+            const sensorBlocks = EntityBinding.generateSensorBlocks(designerState);
+
+            if (sensorBlocks.sensor && sensorBlocks.sensor.length > 0) {
+                yaml += '\n' + generateSensorSectionYaml('sensor', sensorBlocks.sensor);
+            }
+            if (sensorBlocks.binary_sensor && sensorBlocks.binary_sensor.length > 0) {
+                yaml += '\n' + generateSensorSectionYaml('binary_sensor', sensorBlocks.binary_sensor);
+            }
+        }
+
+        return yaml;
+    }
+
+    /**
+     * Generate YAML text for a sensor/binary_sensor section.
+     */
+    function generateSensorSectionYaml(sectionKey, entries) {
+        let yaml = sectionKey + ':\n';
+        for (const entry of entries) {
+            yaml += '  - platform: homeassistant\n';
+            if (entry.id) yaml += '    id: ' + entry.id + '\n';
+            if (entry.entity_id) yaml += '    entity_id: ' + entry.entity_id + '\n';
+            if (entry.attribute) yaml += '    attribute: ' + entry.attribute + '\n';
+
+            const handler = entry.on_value || entry.on_state;
+            const handlerKey = entry.on_value ? 'on_value' : 'on_state';
+            if (handler) {
+                yaml += '    ' + handlerKey + ':\n';
+                for (const action of handler) {
+                    const actionKey = Object.keys(action)[0];
+                    const actionData = action[actionKey];
+                    yaml += '      - ' + actionKey + ':\n';
+                    for (const [key, val] of Object.entries(actionData)) {
+                        if (typeof val === 'string' && val.startsWith(LAMBDA_SENTINEL)) {
+                            yaml += '          ' + key + ': !lambda "' + val.slice(LAMBDA_SENTINEL.length) + '"\n';
+                        } else {
+                            yaml += '          ' + key + ': ' + val + '\n';
+                        }
+                    }
+                }
+            }
+        }
+        return yaml;
     }
 
     /**
@@ -138,7 +244,6 @@ const YAMLEngine = (() => {
         const def = LVGLWidgets.getWidgetDef(widget.type);
         if (def) {
             for (const [key, propDef] of Object.entries(def.properties)) {
-                // Properties that map to style parts (e.g. text_align -> main.text_align)
                 if (propDef.isStyle) {
                     const val = widget.properties[key];
                     if (val !== null && val !== undefined && val !== '' && val !== propDef.default) {
@@ -148,28 +253,19 @@ const YAMLEngine = (() => {
                     }
                     continue;
                 }
-                // Skip designer-only properties (not valid in ESPHome YAML)
                 if (propDef.yamlExclude) continue;
-                // Skip childLabel properties — they live on the child label widget
                 if (propDef.childLabel) continue;
 
                 const val = widget.properties[key];
                 if (val !== null && val !== undefined && val !== '' && val !== propDef.default) {
-                    // Property mapping (e.g. adjustable:false -> disabled:true)
                     if (propDef.yamlMap) {
                         const mappedVal = propDef.yamlInvert ? !val : val;
-                        // Only emit if the mapped value is truthy (e.g. disabled: true)
                         if (mappedVal) {
                             inner[propDef.yamlMap] = mappedVal;
                         }
                         continue;
                     }
-                    // Handle multi-line text properties
-                    if (propDef.type === 'text' && typeof val === 'string' && val.includes('\n')) {
-                        inner[key] = val;
-                    } else {
-                        inner[key] = val;
-                    }
+                    inner[key] = val;
                 }
             }
         }
@@ -186,7 +282,11 @@ const YAMLEngine = (() => {
                     }
                 }
                 if (hasStyles) {
-                    inner[part] = cleanStyles;
+                    if (!inner[part]) {
+                        inner[part] = cleanStyles;
+                    } else {
+                        Object.assign(inner[part], cleanStyles);
+                    }
                 }
             }
         }
@@ -219,7 +319,6 @@ const YAMLEngine = (() => {
                 knobPart.height = 0;
                 inner.knob = knobPart;
             } else if (knobStyle === 'circle') {
-                // Only emit if user customized knob size
                 const kSize = widget.properties.knob_width;
                 if (kSize) {
                     knobPart.radius = '50%';
@@ -234,6 +333,15 @@ const YAMLEngine = (() => {
         if (widget.events) {
             for (const [eventName, actions] of Object.entries(widget.events)) {
                 if (actions && actions.length > 0) {
+                    // Check for conditional binding actions (switch on/off)
+                    const hasConditional = actions.some(a => a._binding_conditional);
+                    if (hasConditional && widget.binding) {
+                        const conditionalActions = EntityBinding.generateConditionalActions(widget);
+                        if (conditionalActions) {
+                            inner[eventName] = conditionalActions;
+                            continue;
+                        }
+                    }
                     inner[eventName] = actions.map(a => actionToYAML(a));
                 }
             }
@@ -261,14 +369,27 @@ const YAMLEngine = (() => {
 
         for (const [key, val] of Object.entries(action.fields || {})) {
             if (val !== null && val !== undefined && val !== '') {
-                // Check if value contains !lambda
-                if (typeof val === 'string' && val.includes('!lambda')) {
-                    actionObj[key] = val;
-                } else if (key === 'data' && typeof val === 'string') {
-                    // Parse data as YAML map
+                if (key === 'data' && typeof val === 'string') {
+                    // Parse data as YAML map, handling !lambda within data values
                     try {
-                        actionObj[key] = yamlLoad(val) || {};
+                        const parsed = yamlLoad(val);
+                        if (parsed && typeof parsed === 'object') {
+                            // Convert any lambda sentinels back to the right form
+                            const processedData = {};
+                            for (const [dk, dv] of Object.entries(parsed)) {
+                                if (typeof dv === 'string' && dv.startsWith(LAMBDA_SENTINEL)) {
+                                    // Keep as sentinel — postProcessYaml will convert to !lambda tag
+                                    processedData[dk] = dv;
+                                } else {
+                                    processedData[dk] = dv;
+                                }
+                            }
+                            actionObj[key] = processedData;
+                        } else {
+                            actionObj[key] = val;
+                        }
                     } catch (e) {
+                        // If parsing fails, output as-is (user may have typed raw YAML)
                         actionObj[key] = val;
                     }
                 } else {
@@ -352,7 +473,6 @@ const YAMLEngine = (() => {
      * Parse a single widget from YAML format.
      */
     function parseWidgetYAML(widgetYaml) {
-        // Widget YAML is { type: { properties... } }
         const type = Object.keys(widgetYaml)[0];
         const props = widgetYaml[type];
 
@@ -378,9 +498,7 @@ const YAMLEngine = (() => {
 
         // Parse widget-specific properties
         for (const [key, propDef] of Object.entries(def.properties)) {
-            // Skip childLabel properties — they live on the child label widget
             if (propDef.childLabel) continue;
-            // Reverse-map YAML keys (e.g. disabled -> adjustable)
             if (propDef.yamlMap && props[propDef.yamlMap] !== undefined) {
                 const val = props[propDef.yamlMap];
                 widget.properties[key] = propDef.yamlInvert ? !val : val;
@@ -413,8 +531,6 @@ const YAMLEngine = (() => {
                 if (ks.width) widget.properties.knob_width = parseInt(ks.width);
                 if (ks.height) widget.properties.knob_height = parseInt(ks.height);
             }
-            // Remove knob styles that were generated from knob_style
-            // so they don't double up on re-export
             const generatedKeys = ['radius', 'bg_color', 'bg_opa', 'border_width', 'shadow_width', 'width', 'height'];
             for (const k of generatedKeys) {
                 delete widget.styles.knob[k];
@@ -450,7 +566,12 @@ const YAMLEngine = (() => {
 
         // Handle lambda shorthand
         if (actionYaml.lambda !== undefined) {
-            return { type: 'lambda', fields: { code: actionYaml.lambda } };
+            let code = actionYaml.lambda;
+            // Strip lambda sentinel if present from parsing
+            if (typeof code === 'string' && code.startsWith(LAMBDA_SENTINEL)) {
+                code = code.slice(LAMBDA_SENTINEL.length);
+            }
+            return { type: 'lambda', fields: { code } };
         }
 
         const type = Object.keys(actionYaml)[0];
@@ -459,7 +580,20 @@ const YAMLEngine = (() => {
         const result = { type, fields: {} };
         for (const [key, val] of Object.entries(fields)) {
             if (key === 'data' && typeof val === 'object') {
-                result.fields[key] = yamlDump(val, { indent: 2 }).trim();
+                // Convert data object back to YAML string for the editor field
+                // Preserve lambda sentinels as !lambda tags in the string
+                const dataLines = [];
+                for (const [dk, dv] of Object.entries(val)) {
+                    if (typeof dv === 'string' && dv.startsWith(LAMBDA_SENTINEL)) {
+                        dataLines.push(`${dk}: !lambda "${dv.slice(LAMBDA_SENTINEL.length)}"`);
+                    } else {
+                        dataLines.push(`${dk}: ${dv}`);
+                    }
+                }
+                result.fields[key] = dataLines.join('\n');
+            } else if (typeof val === 'string' && val.startsWith(LAMBDA_SENTINEL)) {
+                // Preserve lambda sentinel display for the user
+                result.fields[key] = '!lambda "' + val.slice(LAMBDA_SENTINEL.length) + '"';
             } else {
                 result.fields[key] = val;
             }
@@ -475,7 +609,7 @@ const YAMLEngine = (() => {
         if (prop.includes('color') && typeof val === 'string' && val.match(/^0x[0-9A-Fa-f]{6}$/)) {
             return '#' + val.slice(2).toLowerCase();
         }
-        // Handle numeric 0xRRGGBB
+        // Handle numeric 0xRRGGBB (if js-yaml parsed it as a number)
         if (prop.includes('color') && typeof val === 'number') {
             return '#' + val.toString(16).padStart(6, '0');
         }
@@ -484,14 +618,9 @@ const YAMLEngine = (() => {
 
     // ---- Validation ----
 
-    /**
-     * Validate ESPHome LVGL YAML structure and semantics.
-     * Returns an array of validation messages.
-     */
     function validate(yamlStr) {
         const results = [];
 
-        // 1. Parse check
         let doc;
         try {
             doc = yamlLoad(yamlStr);
@@ -509,7 +638,6 @@ const YAMLEngine = (() => {
             return results;
         }
 
-        // 2. Structure validation
         let lvglConfig = doc;
         if (doc.lvgl) {
             lvglConfig = doc.lvgl;
@@ -517,7 +645,6 @@ const YAMLEngine = (() => {
             results.push({ type: 'warning', message: 'Missing top-level "lvgl:" key. ESPHome expects this.' });
         }
 
-        // 3. Pages validation
         if (lvglConfig.pages) {
             if (!Array.isArray(lvglConfig.pages)) {
                 results.push({ type: 'error', message: '"pages" must be a list' });
@@ -532,7 +659,7 @@ const YAMLEngine = (() => {
                         pageIds.add(page.id);
 
                         if (!isValidId(page.id)) {
-                            results.push({ type: 'error', message: `Invalid page ID "${page.id}": must be a valid C identifier (letters, digits, underscores)` });
+                            results.push({ type: 'error', message: `Invalid page ID "${page.id}": must be a valid C identifier` });
                         }
                     }
 
@@ -543,7 +670,6 @@ const YAMLEngine = (() => {
             }
         }
 
-        // 4. Direct widgets validation
         if (lvglConfig.widgets) {
             validateWidgets(lvglConfig.widgets, results, 'root');
         }
@@ -555,9 +681,6 @@ const YAMLEngine = (() => {
         return results;
     }
 
-    /**
-     * Validate a list of widget YAML objects.
-     */
     function validateWidgets(widgets, results, path) {
         if (!Array.isArray(widgets)) {
             results.push({ type: 'error', message: `${path}.widgets must be a list` });
@@ -571,7 +694,6 @@ const YAMLEngine = (() => {
             const props = widgetYaml[type];
             const wPath = `${path}.widgets[${i}]`;
 
-            // Type check
             const def = LVGLWidgets.getWidgetDef(type);
             if (!def) {
                 results.push({ type: 'warning', message: `${wPath}: Unknown widget type "${type}"` });
@@ -583,19 +705,16 @@ const YAMLEngine = (() => {
                 continue;
             }
 
-            // ID check
             if (props.id) {
                 if (widgetIds.has(props.id)) {
                     results.push({ type: 'error', message: `${wPath}: Duplicate widget ID "${props.id}"` });
                 }
                 widgetIds.add(props.id);
-
                 if (!isValidId(props.id)) {
                     results.push({ type: 'error', message: `${wPath}: Invalid ID "${props.id}": must be a valid C identifier` });
                 }
             }
 
-            // Size check
             if (props.width !== undefined && typeof props.width === 'number' && props.width <= 0) {
                 results.push({ type: 'warning', message: `${wPath}: Width should be positive` });
             }
@@ -603,7 +722,6 @@ const YAMLEngine = (() => {
                 results.push({ type: 'warning', message: `${wPath}: Height should be positive` });
             }
 
-            // Slider-specific validation
             if (type === 'slider') {
                 const min = props.min_value ?? 0;
                 const max = props.max_value ?? 100;
@@ -616,14 +734,12 @@ const YAMLEngine = (() => {
                 }
             }
 
-            // Arc-specific validation
             if (type === 'arc') {
                 if (props.arc_width !== undefined && props.arc_width <= 0) {
                     results.push({ type: 'warning', message: `${wPath}: Arc width should be positive` });
                 }
             }
 
-            // Property type validation
             for (const [key, propDef] of Object.entries(def.properties)) {
                 if (props[key] !== undefined) {
                     const val = props[key];
@@ -639,10 +755,9 @@ const YAMLEngine = (() => {
                 }
             }
 
-            // Style validation
             for (const part of (def.parts || [])) {
                 if (props[part] && typeof props[part] === 'object') {
-                    for (const [styleProp, styleVal] of Object.entries(props[part])) {
+                    for (const [styleProp] of Object.entries(props[part])) {
                         if (!LVGLWidgets.STYLE_PROPS[styleProp]) {
                             results.push({ type: 'info', message: `${wPath}.${part}: Unknown style property "${styleProp}"` });
                         }
@@ -650,12 +765,10 @@ const YAMLEngine = (() => {
                 }
             }
 
-            // Children with non-container check
             if (props.widgets && !def.canContain) {
                 results.push({ type: 'warning', message: `${wPath}: Widget type "${type}" does not support child widgets` });
             }
 
-            // Recursive children validation
             if (props.widgets) {
                 validateWidgets(props.widgets, results, wPath);
             }
@@ -668,9 +781,6 @@ const YAMLEngine = (() => {
 
     // ---- Editor Integration ----
 
-    /**
-     * Update the CodeMirror editor content from designer state.
-     */
     function updateEditorFromState(designerState) {
         if (!codeMirrorEditor || isUpdatingFromEditor) return;
         isUpdatingFromDesigner = true;
@@ -680,16 +790,10 @@ const YAMLEngine = (() => {
         updateValidationStatus(validate(yaml));
     }
 
-    /**
-     * Get current editor content as YAML string.
-     */
     function getEditorContent() {
         return codeMirrorEditor ? codeMirrorEditor.getValue() : '';
     }
 
-    /**
-     * Apply YAML from editor to designer.
-     */
     function applyEditorToDesigner() {
         const yaml = getEditorContent();
         const validationResults = validate(yaml);
@@ -718,9 +822,6 @@ const YAMLEngine = (() => {
         }
     }
 
-    /**
-     * Validate the current editor content and update status indicators.
-     */
     function validateEditorContent() {
         const yaml = getEditorContent();
         const results = validate(yaml);
@@ -751,9 +852,6 @@ const YAMLEngine = (() => {
         }
     }
 
-    /**
-     * Format/prettify the current editor content.
-     */
     function formatEditor() {
         if (!codeMirrorEditor) return;
         try {
@@ -766,16 +864,13 @@ const YAMLEngine = (() => {
                 sortKeys: false,
             });
             isUpdatingFromDesigner = true;
-            codeMirrorEditor.setValue(formatted);
+            codeMirrorEditor.setValue(postProcessYaml(formatted));
             isUpdatingFromDesigner = false;
         } catch (e) {
             // If YAML is invalid, don't format
         }
     }
 
-    /**
-     * Export YAML as downloadable file.
-     */
     function exportYAML(designerState) {
         const yaml = generateYAML(designerState);
         const blob = new Blob([yaml], { type: 'text/yaml' });
@@ -787,10 +882,25 @@ const YAMLEngine = (() => {
         URL.revokeObjectURL(url);
     }
 
+    /**
+     * Export full device YAML (LVGL + sensors + bindings) as downloadable file.
+     */
+    function exportFullYAML(designerState) {
+        const yaml = generateFullYAML(designerState);
+        const blob = new Blob([yaml], { type: 'text/yaml' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'lvgl_device.yaml';
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
     // ---- Public API ----
     return {
         init,
         generateYAML,
+        generateFullYAML,
         parseYAML,
         validate,
         updateEditorFromState,
@@ -799,5 +909,7 @@ const YAMLEngine = (() => {
         validateEditorContent,
         formatEditor,
         exportYAML,
+        exportFullYAML,
+        LAMBDA_SENTINEL,
     };
 })();

@@ -1379,3 +1379,254 @@ label {
 .font-remove-btn:hover {
     color: #ff5555;
 }
+
+/* ============================================
+   HA Integration Styles
+   ============================================ */
+
+/* HA Status Dot */
+.ha-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-left: 4px;
+    vertical-align: middle;
+}
+.ha-dot.connected {
+    background: var(--success);
+    box-shadow: 0 0 4px var(--success);
+}
+.ha-dot.disconnected {
+    background: var(--text-muted);
+}
+
+/* HA Connect button */
+.ha-btn {
+    background: #0d47a1 !important;
+    color: #fff !important;
+}
+.ha-btn:hover {
+    background: #1565c0 !important;
+}
+
+/* Deploy button */
+.deploy-btn {
+    background: #e65100 !important;
+    color: #fff !important;
+}
+.deploy-btn:hover {
+    background: #ef6c00 !important;
+}
+.deploy-btn:disabled {
+    background: var(--bg-surface) !important;
+    color: var(--text-muted) !important;
+    cursor: not-allowed;
+}
+
+/* Connection status */
+.connection-status {
+    padding: 6px 8px;
+    margin: 8px 0;
+    border-radius: 4px;
+    font-size: 12px;
+    min-height: 24px;
+}
+.connection-status.info {
+    color: var(--accent);
+    background: rgba(108, 140, 255, 0.1);
+}
+.connection-status.success {
+    color: var(--success);
+    background: rgba(76, 175, 80, 0.1);
+}
+.connection-status.error {
+    color: var(--error);
+    background: rgba(244, 67, 54, 0.1);
+}
+
+/* Form groups */
+.form-group {
+    margin-bottom: 12px;
+}
+.form-group label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+.form-group input[type="text"],
+.form-group input[type="password"] {
+    width: 100%;
+    padding: 6px 8px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 13px;
+}
+.form-group input:focus {
+    border-color: var(--accent);
+    outline: none;
+}
+.form-group small {
+    display: block;
+    margin-top: 4px;
+    font-size: 10px;
+}
+
+/* Button variants */
+.btn-primary {
+    background: var(--accent) !important;
+    color: #fff !important;
+}
+.btn-primary:hover {
+    background: var(--accent-hover) !important;
+}
+.btn-primary:disabled {
+    background: var(--bg-surface) !important;
+    color: var(--text-muted) !important;
+    cursor: not-allowed;
+}
+.btn-danger {
+    color: var(--error) !important;
+}
+
+/* Wide modal */
+.modal-wide {
+    max-width: 700px;
+    width: 90%;
+}
+
+/* Entity Picker */
+.entity-picker-controls {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.entity-picker-controls input[type="text"] {
+    flex: 1;
+    padding: 6px 8px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 13px;
+}
+.entity-picker-controls select {
+    padding: 6px 8px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 13px;
+    min-width: 140px;
+}
+
+.entity-list {
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-dark);
+}
+
+.entity-item {
+    padding: 6px 10px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.entity-item:hover {
+    background: var(--bg-hover);
+}
+.entity-item.selected {
+    background: var(--selection);
+    border-left: 3px solid var(--accent);
+}
+.entity-item-name {
+    flex: 1;
+    font-size: 12px;
+    color: var(--text-primary);
+}
+.entity-item-id {
+    flex: 1;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: monospace;
+}
+.entity-item-state {
+    min-width: 60px;
+    text-align: right;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+/* Entity Role Picker */
+.entity-role-picker {
+    margin-top: 12px;
+    padding: 8px;
+    background: var(--bg-surface);
+    border-radius: 4px;
+}
+.entity-role-picker h4 {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+}
+.role-option {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text-primary);
+    border-radius: 3px;
+}
+.role-option:hover {
+    background: var(--bg-hover);
+}
+.role-option input[type="radio"] {
+    accent-color: var(--accent);
+}
+
+/* Deploy UI */
+.deploy-actions-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.deploy-actions-row button {
+    flex: 1;
+}
+
+.deploy-diff, .deploy-log {
+    margin-top: 12px;
+}
+.deploy-diff h4, .deploy-log h4 {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+.deploy-diff pre, .deploy-log pre {
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 8px;
+    font-size: 11px;
+    max-height: 250px;
+    overflow-y: auto;
+    font-family: monospace;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+/* Diff line colors */
+.diff-line.add { color: var(--success); }
+.diff-line.remove { color: var(--error); }
+.diff-line.header { color: var(--accent); font-weight: bold; margin: 4px 0; }
+.diff-line.context { color: var(--text-muted); }

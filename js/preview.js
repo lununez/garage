@@ -4,6 +4,9 @@
  * Widgets respond to clicks, drags, and touch interactions.
  * Sliders can be dragged, switches toggled, buttons pressed, etc.
  * Event actions are logged to a console overlay.
+ *
+ * HA Integration: When connected to Home Assistant, preview mode shows
+ * live entity states on bound widgets and can execute real HA actions.
  */
 
 const PreviewMode = (() => {
@@ -12,6 +15,8 @@ const PreviewMode = (() => {
     let eventLog = [];
     let eventLogEl = null;
     let previewState = {}; // Track interactive state changes during preview
+    let liveMode = false;  // Whether to use live HA state and execute real actions
+    let haStateUnsub = null; // HA state change unsubscribe function
 
     // Centralized drag state to avoid listener accumulation
     let activeDrag = null;
@@ -28,6 +33,10 @@ const PreviewMode = (() => {
         return active;
     }
 
+    function isLive() {
+        return liveMode && HAConnection.isConnected();
+    }
+
     function enter() {
         active = true;
         canvasEl.classList.add('preview-mode');
@@ -35,11 +44,25 @@ const PreviewMode = (() => {
         activeDrag = null;
         eventLog = [];
 
+        // Check if HA is connected for live mode
+        liveMode = HAConnection.isConnected();
+
         // Create event log overlay
         eventLogEl = document.createElement('div');
         eventLogEl.className = 'preview-event-log';
-        eventLogEl.innerHTML = '<div style="color:#6c8cff">-- Preview Mode --</div>';
+        const modeLabel = liveMode ? '-- Live Preview (HA Connected) --' : '-- Preview Mode --';
+        eventLogEl.innerHTML = `<div style="color:${liveMode ? '#4caf50' : '#6c8cff'}">${modeLabel}</div>`;
         canvasEl.appendChild(eventLogEl);
+
+        // Sync initial HA state to bound widgets
+        if (liveMode) {
+            syncHAStateToWidgets();
+            // Subscribe to HA state changes for live updates
+            haStateUnsub = HAConnection.onAnyStateChange((entity, entityId) => {
+                if (!active) return;
+                syncSingleEntityToWidgets(entityId, entity);
+            });
+        }
 
         renderPreview();
     }
@@ -47,13 +70,97 @@ const PreviewMode = (() => {
     function exit() {
         active = false;
         activeDrag = null;
+        liveMode = false;
         canvasEl.classList.remove('preview-mode');
         previewState = {};
+        if (haStateUnsub) {
+            haStateUnsub();
+            haStateUnsub = null;
+        }
         if (eventLogEl) {
             eventLogEl.remove();
             eventLogEl = null;
         }
         Designer.renderAll();
+    }
+
+    // ---- HA Live State Sync ----
+
+    /**
+     * Sync all HA entity states to their bound widgets.
+     */
+    function syncHAStateToWidgets() {
+        const page = Designer.getCurrentPage();
+        syncWidgetsRecursive(page.widgets);
+    }
+
+    function syncWidgetsRecursive(widgets) {
+        for (const widget of widgets) {
+            if (widget.binding && widget.binding.entity_id) {
+                const entity = HAConnection.getEntity(widget.binding.entity_id);
+                if (entity) {
+                    applyEntityStateToWidget(widget, entity);
+                }
+            }
+            if (widget.children) {
+                syncWidgetsRecursive(widget.children);
+            }
+        }
+    }
+
+    /**
+     * When a single entity changes, find and update any bound widgets.
+     */
+    function syncSingleEntityToWidgets(entityId, entity) {
+        const page = Designer.getCurrentPage();
+        let updated = false;
+
+        const findAndUpdate = (widgets) => {
+            for (const widget of widgets) {
+                if (widget.binding && widget.binding.entity_id === entityId) {
+                    applyEntityStateToWidget(widget, entity);
+                    updated = true;
+                }
+                if (widget.children) findAndUpdate(widget.children);
+            }
+        };
+
+        findAndUpdate(page.widgets);
+        if (updated) renderPreview();
+    }
+
+    /**
+     * Apply an HA entity's state to a widget's preview state.
+     */
+    function applyEntityStateToWidget(widget, entity) {
+        const binding = widget.binding;
+        const template = EntityBinding.getTemplate(binding.domain, binding.role);
+        if (!template || !template.syncFrom) return;
+
+        const syncFrom = template.syncFrom;
+        let value;
+
+        if (syncFrom.stateMapping === 'state') {
+            // Binary state mapping (on/off)
+            value = (entity.state === 'on');
+        } else if (syncFrom.attribute) {
+            // Attribute value
+            const attrVal = entity.attributes[syncFrom.attribute];
+            if (attrVal !== undefined && attrVal !== null) {
+                value = Math.round(parseFloat(attrVal));
+            }
+        } else {
+            // Direct state value
+            const stateVal = parseFloat(entity.state);
+            if (!isNaN(stateVal)) {
+                value = Math.round(stateVal);
+            }
+        }
+
+        if (value !== undefined) {
+            setWidgetValue(widget, value);
+            logEvent(widget.id, 'ha_sync', `${binding.entity_id} → ${value}`);
+        }
     }
 
     function logEvent(widgetId, eventName, detail) {
@@ -85,10 +192,52 @@ const PreviewMode = (() => {
         if (widget.events && widget.events[eventName]) {
             for (const action of widget.events[eventName]) {
                 logAction(widget.id, eventName, action);
+
+                // Execute real HA action in live mode
+                if (isLive() && action.type === 'homeassistant.action' && action.fields?.action) {
+                    executeHAAction(widget, action);
+                }
             }
         } else {
             logEvent(widget.id, eventName, '');
         }
+    }
+
+    /**
+     * Execute a real HA action from a widget event.
+     */
+    function executeHAAction(widget, action) {
+        const haAction = action.fields.action;
+        let data = {};
+
+        if (action.fields.data) {
+            // Parse data field
+            try {
+                const parsed = jsyaml.load(action.fields.data);
+                if (parsed && typeof parsed === 'object') {
+                    data = parsed;
+                }
+            } catch (e) {
+                // Try simple key: value parsing
+                data = {};
+            }
+        }
+
+        // Resolve any lambda-style references to the current widget value
+        // Replace !lambda "return int(x);" patterns with the actual value
+        const widgetValue = getWidgetValue(widget);
+        for (const [key, val] of Object.entries(data)) {
+            if (typeof val === 'string' && val.startsWith('__LAMBDA__')) {
+                // Approximate lambda evaluation with widget value
+                data[key] = widgetValue;
+            }
+        }
+
+        HAConnection.executeAction(haAction, data).then(() => {
+            logEvent(widget.id, 'ha_action', `${haAction} OK`);
+        }).catch(err => {
+            logEvent(widget.id, 'ha_error', `${haAction}: ${err.message}`);
+        });
     }
 
     function getWidgetValue(widget) {

@@ -674,6 +674,29 @@ const Designer = (() => {
             }
         }
 
+        // Entity Binding section
+        html += `<div class="prop-section">`;
+        html += `<div class="prop-section-header${widget.binding ? ' expanded' : ''}">HA Entity Binding</div>`;
+        html += `<div class="prop-section-body">`;
+        if (widget.binding) {
+            const entityName = typeof EntityBinding !== 'undefined'
+                ? EntityBinding.getEntityName(widget.binding.entity_id)
+                : widget.binding.entity_id;
+            html += `<div style="margin:4px 6px;padding:6px;background:var(--bg-surface);border-radius:4px;font-size:11px">`;
+            html += `<div style="color:#4caf50;font-weight:600;margin-bottom:4px">Bound</div>`;
+            html += `<div style="color:var(--text-secondary)">${escapeHtml(entityName)}</div>`;
+            html += `<div style="color:var(--text-muted);font-size:10px">${escapeHtml(widget.binding.entity_id)}</div>`;
+            html += `<div style="color:var(--text-muted);font-size:10px;margin-top:2px">Role: ${escapeHtml(widget.binding.role)}</div>`;
+            html += `<div style="margin-top:4px;display:flex;gap:4px">`;
+            html += `<button onclick="AppActions.removeBinding('${widget.id}')" style="font-size:10px" class="btn-danger">Remove Binding</button>`;
+            html += `</div></div>`;
+        } else {
+            html += `<div style="margin:6px;text-align:center">`;
+            html += `<button onclick="AppActions.openEntityPicker('${widget.id}')" style="font-size:11px;width:100%">Bind to HA Entity</button>`;
+            html += `</div>`;
+        }
+        html += `</div></div>`;
+
         // Events section
         const applicableEvents = LVGLWidgets.getEventsForWidget(widget.type);
         html += `<div class="prop-section">`;

@@ -36,14 +36,20 @@
             </label>
         </div>
         <div class="toolbar-right">
+            <button id="btn-ha-connect" class="ha-btn" title="Connect to Home Assistant">HA Connect</button>
+            <span id="ha-status-dot" class="ha-dot disconnected" title="Not connected"></span>
+            <span class="toolbar-sep"></span>
             <button id="btn-save" title="Save Project (Ctrl+S)">&#128427; Save</button>
             <button id="btn-load" title="Load Project">&#128449; Load</button>
             <span class="toolbar-sep"></span>
             <button id="btn-fonts" title="Manage Fonts">&#9042; Fonts</button>
             <span class="toolbar-sep"></span>
             <button id="btn-validate" title="Validate YAML">&#10003; Validate</button>
-            <button id="btn-export" title="Export YAML">&#128190; Export</button>
+            <button id="btn-export" title="Export LVGL YAML only">&#128190; Export</button>
+            <button id="btn-export-full" title="Export full device YAML (LVGL + sensors)">&#128230; Full Export</button>
             <button id="btn-import" title="Import YAML">&#128194; Import</button>
+            <span class="toolbar-sep"></span>
+            <button id="btn-deploy" class="deploy-btn" title="Deploy to ESP device via ESPHome">&#128640; Deploy</button>
         </div>
     </div>
 
@@ -163,6 +169,96 @@
         </div>
     </div>
 
+    <!-- HA Connection Modal -->
+    <div id="ha-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span>Home Assistant Connection</span>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>HA URL</label>
+                    <input type="text" id="ha-url" placeholder="http://homeassistant.local:8123">
+                </div>
+                <div class="form-group">
+                    <label>Long-Lived Access Token</label>
+                    <input type="password" id="ha-token" placeholder="Paste your HA access token">
+                    <small style="color:var(--text-muted)">Create at: HA Profile &rarr; Long-Lived Access Tokens</small>
+                </div>
+                <div id="ha-connection-status" class="connection-status"></div>
+                <div class="modal-actions">
+                    <button id="btn-ha-do-connect" class="btn-primary">Connect</button>
+                    <button id="btn-ha-disconnect" class="btn-danger" style="display:none">Disconnect</button>
+                    <button class="btn-cancel modal-close">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Entity Picker Modal -->
+    <div id="entity-picker-modal" class="modal hidden">
+        <div class="modal-content modal-wide">
+            <div class="modal-header">
+                <span>Bind to Home Assistant Entity</span>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="entity-picker-controls">
+                    <input type="text" id="entity-search" placeholder="Search entities...">
+                    <select id="entity-domain-filter">
+                        <option value="">All Domains</option>
+                    </select>
+                </div>
+                <div id="entity-list" class="entity-list">
+                    <!-- Populated by JS -->
+                </div>
+                <div id="entity-role-picker" class="entity-role-picker" style="display:none">
+                    <h4>Select binding role:</h4>
+                    <div id="entity-role-options"></div>
+                </div>
+                <div class="modal-actions">
+                    <button id="btn-entity-bind" class="btn-primary" disabled>Bind Selected</button>
+                    <button class="btn-cancel modal-close">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Deploy Modal -->
+    <div id="deploy-modal" class="modal hidden">
+        <div class="modal-content modal-wide">
+            <div class="modal-header">
+                <span>Deploy to ESPHome Device</span>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>ESPHome Dashboard URL</label>
+                    <input type="text" id="esphome-url" placeholder="http://homeassistant.local:6052">
+                </div>
+                <div class="form-group">
+                    <label>Device Config File</label>
+                    <input type="text" id="esphome-device" placeholder="lanbon-l9.yaml">
+                </div>
+                <div class="deploy-actions-row">
+                    <button id="btn-deploy-fetch" class="btn-primary">Fetch Device YAML</button>
+                    <button id="btn-deploy-preview" disabled>Preview Merge</button>
+                    <button id="btn-deploy-push" class="deploy-btn" disabled>Push &amp; Compile</button>
+                </div>
+                <div id="deploy-status" class="connection-status"></div>
+                <div id="deploy-diff" class="deploy-diff" style="display:none">
+                    <h4>Changes to apply:</h4>
+                    <pre id="deploy-diff-content"></pre>
+                </div>
+                <div id="deploy-log" class="deploy-log" style="display:none">
+                    <h4>Compile Output:</h4>
+                    <pre id="deploy-log-content"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Hidden file input for import -->
     <input type="file" id="file-input" accept=".yaml,.yml" style="display:none">
 
@@ -177,10 +273,13 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/foldgutter.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/indent-fold.min.js"></script>
 
-    <!-- Application Scripts -->
+    <!-- Application Scripts (order matters: dependencies first) -->
     <script src="js/widgets.js"></script>
     <script src="js/font-manager.js"></script>
     <script src="js/renderer.js"></script>
+    <script src="js/ha-connection.js"></script>
+    <script src="js/entity-binding.js"></script>
+    <script src="js/device-manager.js"></script>
     <script src="js/designer.js"></script>
     <script src="js/yaml-engine.js"></script>
     <script src="js/preview.js"></script>

@@ -1,18 +1,24 @@
 /**
  * LVGL Visual Designer - Main Application
  * Orchestrates all modules: widget palette, designer canvas, YAML editor,
- * toolbar actions, and ensures bidirectional sync between visual and YAML.
+ * toolbar actions, HA integration, entity binding, device deployment,
+ * and ensures bidirectional sync between visual and YAML.
  */
 
 (function () {
     'use strict';
 
-    // ---- Wait for DOM ----
     document.addEventListener('DOMContentLoaded', () => {
         initApp();
     });
 
     function initApp() {
+        // Initialize HA Connection
+        HAConnection.init();
+
+        // Initialize Device Manager
+        DeviceManager.init();
+
         // Initialize YAML Engine
         YAMLEngine.init({
             onApply: (newState) => {
@@ -28,7 +34,7 @@
             },
         });
 
-        // Initialize Font Manager — re-render on font changes
+        // Initialize Font Manager
         FontManager.init([]);
         FontManager.onChange(() => {
             Designer.renderAll();
@@ -45,6 +51,9 @@
         setupModals();
         setupDisplaySizeSelector();
         setupModeToggle();
+        setupHAConnection();
+        setupEntityPicker();
+        setupDeployment();
 
         // Ctrl+S to save
         document.addEventListener('keydown', (e) => {
@@ -59,6 +68,9 @@
 
         // Initial YAML sync
         YAMLEngine.updateEditorFromState(Designer.getState());
+
+        // Update HA status dot
+        updateHAStatusDot();
     }
 
     function autoLoadLastProject() {
@@ -66,7 +78,6 @@
         if (!lastName) return;
         const projects = getProjects();
         if (!projects[lastName]) return;
-        // Silently restore without prompts
         const proj = projects[lastName];
         Designer.setState(proj.state);
         FontManager.init(proj.fonts || []);
@@ -122,7 +133,6 @@
                     e.dataTransfer.setData('text/widget-type', widget.type);
                     e.dataTransfer.effectAllowed = 'copy';
 
-                    // Create drag preview
                     const preview = document.createElement('div');
                     preview.className = 'drag-preview';
                     preview.textContent = widget.label;
@@ -131,7 +141,6 @@
                     setTimeout(() => preview.remove(), 0);
                 });
 
-                // Double-click to add at center
                 itemEl.addEventListener('dblclick', () => {
                     const state = Designer.getState();
                     const cx = Math.round(state.displayWidth / 2 - (LVGLWidgets.getWidgetDef(widget.type)?.defaultSize.width || 50) / 2);
@@ -158,7 +167,6 @@
                     item.style.display = (text.includes(query) || title.includes(query)) ? '' : 'none';
                 });
 
-                // Show all categories when searching
                 if (query) {
                     paletteEl.querySelectorAll('.widget-category-items').forEach(el => {
                         el.classList.add('expanded');
@@ -189,6 +197,10 @@
 
         document.getElementById('btn-export')?.addEventListener('click', () => {
             YAMLEngine.exportYAML(Designer.getState());
+        });
+
+        document.getElementById('btn-export-full')?.addEventListener('click', () => {
+            YAMLEngine.exportFullYAML(Designer.getState());
         });
 
         document.getElementById('btn-import')?.addEventListener('click', () => {
@@ -228,8 +240,6 @@
             savedAt: new Date().toISOString(),
         };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
-
-        // Auto-save also stores last-used project name
         localStorage.setItem('lvgl-designer-last-project', name);
         showToast('Project saved: ' + name);
     }
@@ -242,14 +252,12 @@
         Designer.setState(proj.state);
         FontManager.init(proj.fonts || []);
 
-        // Restore display size in dropdown
         const sizeSelect = document.getElementById('display-size');
         if (sizeSelect && proj.displaySize) {
             const match = Array.from(sizeSelect.options).find(o => o.value === proj.displaySize);
             if (match) {
                 sizeSelect.value = proj.displaySize;
             } else if (proj.displaySize !== 'custom') {
-                // Add custom option if size isn't in presets
                 const opt = document.createElement('option');
                 opt.value = proj.displaySize;
                 const [w, h] = proj.displaySize.split('x');
@@ -270,7 +278,7 @@
         const projects = getProjects();
         delete projects[name];
         localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
-        showLoadModal(); // refresh list
+        showLoadModal();
     }
 
     function showLoadModal() {
@@ -315,7 +323,6 @@
         setTimeout(() => toast.classList.remove('show'), 2000);
     }
 
-    // Expose actions for inline onclick handlers
     window.AppActions = { loadProject, deleteProject };
 
     // ---- Display Size Selector ----
@@ -331,7 +338,6 @@
                 if (w && h) {
                     const pw = parseInt(w), ph = parseInt(h);
                     const sizeStr = pw + 'x' + ph;
-                    // Add as a selectable option so it persists in the dropdown
                     const opt = document.createElement('option');
                     opt.value = sizeStr;
                     opt.textContent = `${pw}x${ph} (Custom)`;
@@ -340,7 +346,6 @@
                     Designer.setDisplaySize(pw, ph);
                     Designer.renderAll();
                 } else {
-                    // Revert dropdown if cancelled
                     select.value = Designer.getState().displayWidth + 'x' + Designer.getState().displayHeight;
                 }
             } else {
@@ -353,7 +358,6 @@
 
     // ---- YAML Panel Events ----
     function setupYAMLPanelEvents() {
-        // Apply button
         document.getElementById('btn-yaml-apply')?.addEventListener('click', () => {
             const result = YAMLEngine.applyEditorToDesigner();
             if (!result.success) {
@@ -361,12 +365,10 @@
             }
         });
 
-        // Format button
         document.getElementById('btn-yaml-format')?.addEventListener('click', () => {
             YAMLEngine.formatEditor();
         });
 
-        // Toggle button
         const toggleBtn = document.getElementById('btn-yaml-toggle');
         const yamlPanel = document.getElementById('yaml-panel');
         if (toggleBtn && yamlPanel) {
@@ -376,7 +378,6 @@
             });
         }
 
-        // Resize handle
         const resizeHandle = document.getElementById('yaml-resize-handle');
         if (resizeHandle && yamlPanel) {
             let resizing = false;
@@ -405,21 +406,18 @@
 
     // ---- Modals ----
     function setupModals() {
-        // Close buttons
         document.querySelectorAll('.modal-close').forEach(btn => {
             btn.addEventListener('click', () => {
                 btn.closest('.modal')?.classList.add('hidden');
             });
         });
 
-        // Click outside to close
         document.querySelectorAll('.modal').forEach(modal => {
             modal.addEventListener('click', (e) => {
                 if (e.target === modal) modal.classList.add('hidden');
             });
         });
 
-        // Import confirm
         document.getElementById('btn-import-confirm')?.addEventListener('click', () => {
             const textarea = document.getElementById('import-textarea');
             if (!textarea) return;
@@ -469,7 +467,6 @@
                 designBtn.classList.add('active');
                 previewBtn.classList.remove('active');
                 PreviewMode.exit();
-                // Re-enable design UI elements
                 document.getElementById('panel-left').style.opacity = '';
                 document.getElementById('panel-left').style.pointerEvents = '';
                 document.getElementById('panel-right').style.opacity = '';
@@ -481,13 +478,396 @@
                 previewBtn.classList.add('active');
                 designBtn.classList.remove('active');
                 PreviewMode.enter();
-                // Dim the side panels in preview mode
                 document.getElementById('panel-left').style.opacity = '0.4';
                 document.getElementById('panel-left').style.pointerEvents = 'none';
                 document.getElementById('panel-right').style.opacity = '0.4';
                 document.getElementById('panel-right').style.pointerEvents = 'none';
             });
         }
+    }
+
+    // ---- Home Assistant Connection ----
+    function setupHAConnection() {
+        const connectBtn = document.getElementById('btn-ha-connect');
+        connectBtn?.addEventListener('click', () => {
+            const modal = document.getElementById('ha-modal');
+            if (!modal) return;
+
+            // Populate saved config
+            const cfg = HAConnection.getConfig();
+            document.getElementById('ha-url').value = cfg.url || '';
+            document.getElementById('ha-token').value = cfg.token || '';
+
+            updateHAModalStatus();
+            modal.classList.remove('hidden');
+        });
+
+        document.getElementById('btn-ha-do-connect')?.addEventListener('click', async () => {
+            const url = document.getElementById('ha-url').value.trim();
+            const token = document.getElementById('ha-token').value.trim();
+
+            if (!url || !token) {
+                setHAStatus('Please enter both URL and token', 'error');
+                return;
+            }
+
+            HAConnection.setConfig(url, token);
+            setHAStatus('Connecting...', 'info');
+
+            try {
+                await HAConnection.connect();
+                const entities = HAConnection.getEntities();
+                const count = Object.keys(entities).length;
+                setHAStatus(`Connected! Found ${count} entities`, 'success');
+                updateHAModalStatus();
+                updateHAStatusDot();
+                showToast('Connected to Home Assistant');
+            } catch (e) {
+                setHAStatus('Connection failed: ' + e.message, 'error');
+                updateHAStatusDot();
+            }
+        });
+
+        document.getElementById('btn-ha-disconnect')?.addEventListener('click', () => {
+            HAConnection.disconnect();
+            setHAStatus('Disconnected', 'info');
+            updateHAModalStatus();
+            updateHAStatusDot();
+        });
+
+        // Listen for connection state changes
+        HAConnection.onConnectionChange((connected) => {
+            updateHAStatusDot();
+            if (!connected) {
+                updateHAModalStatus();
+            }
+        });
+    }
+
+    function setHAStatus(msg, type) {
+        const el = document.getElementById('ha-connection-status');
+        if (!el) return;
+        el.textContent = msg;
+        el.className = 'connection-status ' + type;
+    }
+
+    function updateHAModalStatus() {
+        const connected = HAConnection.isConnected();
+        const connectBtn = document.getElementById('btn-ha-do-connect');
+        const disconnectBtn = document.getElementById('btn-ha-disconnect');
+        if (connectBtn) connectBtn.style.display = connected ? 'none' : '';
+        if (disconnectBtn) disconnectBtn.style.display = connected ? '' : 'none';
+    }
+
+    function updateHAStatusDot() {
+        const dot = document.getElementById('ha-status-dot');
+        if (!dot) return;
+        const connected = HAConnection.isConnected();
+        dot.className = 'ha-dot ' + (connected ? 'connected' : 'disconnected');
+        dot.title = connected ? 'Connected to HA' : 'Not connected';
+    }
+
+    // ---- Entity Picker ----
+    let selectedEntityId = null;
+    let selectedEntityRole = null;
+    let bindingTargetWidgetId = null;
+
+    function setupEntityPicker() {
+        // Entity search
+        document.getElementById('entity-search')?.addEventListener('input', (e) => {
+            filterEntityList(e.target.value);
+        });
+
+        document.getElementById('entity-domain-filter')?.addEventListener('change', () => {
+            populateEntityList();
+        });
+
+        document.getElementById('btn-entity-bind')?.addEventListener('click', () => {
+            if (!selectedEntityId || !selectedEntityRole || !bindingTargetWidgetId) return;
+
+            const page = Designer.getCurrentPage();
+            const widget = Designer.findWidgetById(bindingTargetWidgetId, page.widgets);
+            if (!widget) return;
+
+            const binding = EntityBinding.createBinding(selectedEntityId, selectedEntityRole, widget);
+            if (binding) {
+                widget.binding = binding;
+                Designer.renderAll();
+                YAMLEngine.updateEditorFromState(Designer.getState());
+                showToast(`Bound ${widget.id} to ${selectedEntityId}`);
+            }
+
+            document.getElementById('entity-picker-modal')?.classList.add('hidden');
+        });
+    }
+
+    /**
+     * Open the entity picker for a specific widget.
+     * Called from the properties panel "Bind Entity" button.
+     */
+    function openEntityPicker(widgetId) {
+        if (!HAConnection.isConnected()) {
+            showToast('Connect to Home Assistant first');
+            document.getElementById('ha-modal')?.classList.remove('hidden');
+            return;
+        }
+
+        bindingTargetWidgetId = widgetId;
+        selectedEntityId = null;
+        selectedEntityRole = null;
+
+        // Populate domain filter
+        const domainFilter = document.getElementById('entity-domain-filter');
+        if (domainFilter) {
+            const domains = HAConnection.getDomains();
+            const supported = EntityBinding.getSupportedDomains();
+            domainFilter.innerHTML = '<option value="">All Domains</option>';
+            for (const domain of domains) {
+                const opt = document.createElement('option');
+                opt.value = domain;
+                opt.textContent = domain + (supported.includes(domain) ? '' : ' (no templates)');
+                domainFilter.appendChild(opt);
+            }
+        }
+
+        populateEntityList();
+
+        document.getElementById('entity-role-picker').style.display = 'none';
+        document.getElementById('btn-entity-bind').disabled = true;
+        document.getElementById('entity-picker-modal')?.classList.remove('hidden');
+    }
+
+    function populateEntityList() {
+        const listEl = document.getElementById('entity-list');
+        if (!listEl) return;
+
+        const domainFilter = document.getElementById('entity-domain-filter')?.value || '';
+        const searchQuery = document.getElementById('entity-search')?.value || '';
+
+        let entities = domainFilter
+            ? HAConnection.getEntitiesByDomain(domainFilter)
+            : HAConnection.getEntities();
+
+        // Sort by entity_id
+        const sorted = Object.entries(entities).sort((a, b) => a[0].localeCompare(b[0]));
+
+        listEl.innerHTML = '';
+        for (const [entityId, entity] of sorted) {
+            const name = entity.attributes?.friendly_name || entityId;
+            const domain = entity.domain;
+            const state = entity.state;
+
+            // Apply search filter
+            if (searchQuery) {
+                const q = searchQuery.toLowerCase();
+                if (!entityId.toLowerCase().includes(q) && !name.toLowerCase().includes(q)) continue;
+            }
+
+            const itemEl = document.createElement('div');
+            itemEl.className = 'entity-item';
+            itemEl.dataset.entityId = entityId;
+            itemEl.innerHTML = `
+                <div class="entity-item-name">${escapeHtml(name)}</div>
+                <div class="entity-item-id">${escapeHtml(entityId)}</div>
+                <div class="entity-item-state">${escapeHtml(state)}</div>
+            `;
+
+            itemEl.addEventListener('click', () => {
+                listEl.querySelectorAll('.entity-item').forEach(el => el.classList.remove('selected'));
+                itemEl.classList.add('selected');
+                selectedEntityId = entityId;
+                showRolePicker(entityId);
+            });
+
+            listEl.appendChild(itemEl);
+        }
+
+        if (listEl.children.length === 0) {
+            listEl.innerHTML = '<div style="padding:16px;color:var(--text-muted);text-align:center">No matching entities</div>';
+        }
+    }
+
+    function filterEntityList(query) {
+        const listEl = document.getElementById('entity-list');
+        if (!listEl) return;
+
+        listEl.querySelectorAll('.entity-item').forEach(item => {
+            const id = item.dataset.entityId || '';
+            const name = item.querySelector('.entity-item-name')?.textContent || '';
+            const q = query.toLowerCase();
+            item.style.display = (id.toLowerCase().includes(q) || name.toLowerCase().includes(q)) ? '' : 'none';
+        });
+    }
+
+    function showRolePicker(entityId) {
+        const rolePicker = document.getElementById('entity-role-picker');
+        const roleOptions = document.getElementById('entity-role-options');
+        if (!rolePicker || !roleOptions) return;
+
+        // Find the target widget type
+        const page = Designer.getCurrentPage();
+        const widget = Designer.findWidgetById(bindingTargetWidgetId, page.widgets);
+        if (!widget) return;
+
+        const roles = EntityBinding.getCompatibleRoles(entityId, widget.type);
+
+        if (roles.length === 0) {
+            roleOptions.innerHTML = '<div style="color:var(--text-muted)">No compatible binding for this entity + widget type</div>';
+            rolePicker.style.display = 'block';
+            document.getElementById('btn-entity-bind').disabled = true;
+            return;
+        }
+
+        roleOptions.innerHTML = '';
+        for (const { role, label } of roles) {
+            const radioEl = document.createElement('label');
+            radioEl.className = 'role-option';
+            radioEl.innerHTML = `
+                <input type="radio" name="entity-role" value="${role}">
+                <span>${escapeHtml(label)}</span>
+            `;
+            radioEl.querySelector('input').addEventListener('change', () => {
+                selectedEntityRole = role;
+                document.getElementById('btn-entity-bind').disabled = false;
+            });
+            roleOptions.appendChild(radioEl);
+        }
+
+        // Auto-select if only one role
+        if (roles.length === 1) {
+            roleOptions.querySelector('input').checked = true;
+            selectedEntityRole = roles[0].role;
+            document.getElementById('btn-entity-bind').disabled = false;
+        }
+
+        rolePicker.style.display = 'block';
+    }
+
+    // Expose for use from designer properties panel
+    window.AppActions.openEntityPicker = openEntityPicker;
+    window.AppActions.removeBinding = function(widgetId) {
+        const page = Designer.getCurrentPage();
+        const widget = Designer.findWidgetById(widgetId, page.widgets);
+        if (widget) {
+            EntityBinding.removeBinding(widget);
+            Designer.renderAll();
+            YAMLEngine.updateEditorFromState(Designer.getState());
+            showToast('Binding removed');
+        }
+    };
+
+    // ---- Deployment ----
+    let fetchedDeviceYaml = '';
+    let mergedYaml = '';
+
+    function setupDeployment() {
+        document.getElementById('btn-deploy')?.addEventListener('click', () => {
+            const modal = document.getElementById('deploy-modal');
+            if (!modal) return;
+
+            const cfg = DeviceManager.getConfig();
+            document.getElementById('esphome-url').value = cfg.dashboardUrl || '';
+            document.getElementById('esphome-device').value = cfg.deviceFile || '';
+
+            document.getElementById('deploy-status').textContent = '';
+            document.getElementById('deploy-diff').style.display = 'none';
+            document.getElementById('deploy-log').style.display = 'none';
+            document.getElementById('btn-deploy-preview').disabled = true;
+            document.getElementById('btn-deploy-push').disabled = true;
+
+            modal.classList.remove('hidden');
+        });
+
+        document.getElementById('btn-deploy-fetch')?.addEventListener('click', async () => {
+            const url = document.getElementById('esphome-url').value.trim();
+            const device = document.getElementById('esphome-device').value.trim();
+
+            if (!url || !device) {
+                setDeployStatus('Please enter dashboard URL and device file', 'error');
+                return;
+            }
+
+            DeviceManager.setConfig(url, device);
+            setDeployStatus('Fetching device YAML...', 'info');
+
+            try {
+                fetchedDeviceYaml = await DeviceManager.fetchDeviceYaml();
+                setDeployStatus(`Fetched ${fetchedDeviceYaml.length} bytes`, 'success');
+                document.getElementById('btn-deploy-preview').disabled = false;
+            } catch (e) {
+                setDeployStatus('Fetch failed: ' + e.message, 'error');
+            }
+        });
+
+        document.getElementById('btn-deploy-preview')?.addEventListener('click', () => {
+            if (!fetchedDeviceYaml) return;
+
+            const designerYaml = YAMLEngine.generateFullYAML(Designer.getState());
+            const sensorBlocks = EntityBinding.generateSensorBlocks(Designer.getState());
+
+            mergedYaml = DeviceManager.mergeYaml(fetchedDeviceYaml, designerYaml, sensorBlocks);
+
+            // Show diff
+            const diff = DeviceManager.generateDiff(fetchedDeviceYaml, mergedYaml);
+            const diffEl = document.getElementById('deploy-diff-content');
+            if (diffEl) {
+                diffEl.innerHTML = '';
+                for (const line of diff) {
+                    const span = document.createElement('div');
+                    span.className = 'diff-line ' + line.type;
+                    span.textContent = (line.type === 'add' ? '+ ' : line.type === 'remove' ? '- ' : '  ') + line.text;
+                    diffEl.appendChild(span);
+                }
+            }
+            document.getElementById('deploy-diff').style.display = 'block';
+            document.getElementById('btn-deploy-push').disabled = false;
+            setDeployStatus('Preview ready. Review changes before pushing.', 'info');
+        });
+
+        document.getElementById('btn-deploy-push')?.addEventListener('click', async () => {
+            if (!mergedYaml) return;
+
+            if (!confirm('Push changes to device and compile? This will update the device YAML.')) return;
+
+            setDeployStatus('Uploading YAML...', 'info');
+
+            try {
+                await DeviceManager.uploadDeviceYaml(mergedYaml);
+                setDeployStatus('YAML uploaded. Starting compile...', 'success');
+
+                // Show compile log
+                document.getElementById('deploy-log').style.display = 'block';
+                const logEl = document.getElementById('deploy-log-content');
+                if (logEl) logEl.textContent = '';
+
+                DeviceManager.triggerCompileUpload(
+                    (line) => {
+                        if (logEl) {
+                            logEl.textContent += line + '\n';
+                            logEl.scrollTop = logEl.scrollHeight;
+                        }
+                    },
+                    (success) => {
+                        if (success === true) {
+                            setDeployStatus('Compile & upload successful!', 'success');
+                        } else if (success === false) {
+                            setDeployStatus('Compile failed. Check output above.', 'error');
+                        } else {
+                            setDeployStatus('Connection closed.', 'info');
+                        }
+                    }
+                );
+            } catch (e) {
+                setDeployStatus('Upload failed: ' + e.message, 'error');
+            }
+        });
+    }
+
+    function setDeployStatus(msg, type) {
+        const el = document.getElementById('deploy-status');
+        if (!el) return;
+        el.textContent = msg;
+        el.className = 'connection-status ' + type;
     }
 
     function escapeHtml(str) {
