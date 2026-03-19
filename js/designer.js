@@ -541,7 +541,10 @@ const Designer = (() => {
             wrapperEl.appendChild(visualEl);
 
             // Render children inside container widgets
-            if (widget.children && widget.children.length > 0) {
+            // Skip for widget types that render children internally (e.g. buttons show their label inline)
+            const def = LVGLWidgets.getWidgetDef(widget.type);
+            const rendersOwnChildren = widget.type === 'button';
+            if (widget.children && widget.children.length > 0 && !rendersOwnChildren) {
                 renderWidgetList(widget.children, wrapperEl);
             }
 

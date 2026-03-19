@@ -209,11 +209,19 @@ const LVGLRenderer = (() => {
             const el = document.createElement('div');
             el.className = 'lvgl-widget lvgl-button';
             applyStyles(el, widget.styles?.main);
-            // Render children labels
+            // Render child label text inline (children are not rendered separately)
             if (widget.children && widget.children.length > 0) {
                 const childLabel = widget.children.find(c => c.type === 'label');
                 if (childLabel) {
                     renderLabelText(el, childLabel.properties?.text || '');
+                    // Apply child label's text color and alignment
+                    const childTc = parseColor(childLabel.styles?.main?.text_color);
+                    if (childTc) el.style.color = childTc;
+                    const childAlign = childLabel.properties?.text_align || childLabel.styles?.main?.text_align;
+                    if (childAlign) {
+                        const justifyMap = { LEFT: 'flex-start', CENTER: 'center', RIGHT: 'flex-end' };
+                        el.style.justifyContent = justifyMap[childAlign] || 'center';
+                    }
                 }
             } else {
                 el.textContent = 'Button';
