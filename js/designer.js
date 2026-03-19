@@ -348,6 +348,7 @@ const Designer = (() => {
     }
 
     function onCanvasClick(e) {
+        if (PreviewMode.isActive()) return;
         if (e.target === canvasEl) {
             state.selectedWidgetId = null;
             renderAll();
@@ -355,6 +356,7 @@ const Designer = (() => {
     }
 
     function onCanvasMouseDown(e) {
+        if (PreviewMode.isActive()) return; // Don't drag widgets in preview mode
         const widgetEl = e.target.closest('.canvas-widget');
         if (!widgetEl) return;
 

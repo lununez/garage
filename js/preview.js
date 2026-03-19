@@ -13,8 +13,15 @@ const PreviewMode = (() => {
     let eventLogEl = null;
     let previewState = {}; // Track interactive state changes during preview
 
+    // Centralized drag state to avoid listener accumulation
+    let activeDrag = null;
+
     function init() {
         canvasEl = document.getElementById('canvas');
+
+        // Single set of document-level listeners for all drag interactions
+        document.addEventListener('mousemove', onDocMouseMove);
+        document.addEventListener('mouseup', onDocMouseUp);
     }
 
     function isActive() {
@@ -25,6 +32,7 @@ const PreviewMode = (() => {
         active = true;
         canvasEl.classList.add('preview-mode');
         previewState = {};
+        activeDrag = null;
         eventLog = [];
 
         // Create event log overlay
@@ -38,6 +46,7 @@ const PreviewMode = (() => {
 
     function exit() {
         active = false;
+        activeDrag = null;
         canvasEl.classList.remove('preview-mode');
         previewState = {};
         if (eventLogEl) {
@@ -94,6 +103,22 @@ const PreviewMode = (() => {
         previewState[widget.id].value = value;
     }
 
+    // ---- Centralized document-level drag handling ----
+
+    function onDocMouseMove(e) {
+        if (!activeDrag) return;
+        e.preventDefault();
+        activeDrag.onMove(e);
+    }
+
+    function onDocMouseUp(e) {
+        if (!activeDrag) return;
+        if (activeDrag.onUp) activeDrag.onUp(e);
+        activeDrag = null;
+    }
+
+    // ---- Rendering ----
+
     function renderPreview() {
         if (!canvasEl || !active) return;
         // Save event log
@@ -113,7 +138,7 @@ const PreviewMode = (() => {
     function renderPreviewWidgets(widgets, parentEl) {
         for (const widget of widgets) {
             const wrapperEl = document.createElement('div');
-            wrapperEl.className = 'canvas-widget';
+            wrapperEl.className = 'canvas-widget preview-widget';
             wrapperEl.dataset.widgetId = widget.id;
             wrapperEl.style.left = widget.x + 'px';
             wrapperEl.style.top = widget.y + 'px';
@@ -130,8 +155,9 @@ const PreviewMode = (() => {
             // Add interactive behavior based on widget type
             attachInteraction(widget, wrapperEl);
 
-            // Render children
-            if (widget.children && widget.children.length > 0) {
+            // Render children (skip for buttons which render labels internally)
+            const rendersOwnChildren = widget.type === 'button';
+            if (widget.children && widget.children.length > 0 && !rendersOwnChildren) {
                 renderPreviewWidgets(widget.children, wrapperEl);
             }
 
@@ -158,11 +184,16 @@ const PreviewMode = (() => {
         const type = widget.type;
 
         // Common click events
-        wrapperEl.addEventListener('mousedown', () => {
-            fireEvent(widget, 'on_press');
+        wrapperEl.addEventListener('mousedown', (e) => {
+            // Don't fire generic press if a specific handler will handle it
+            if (type !== 'slider' && type !== 'arc') {
+                fireEvent(widget, 'on_press');
+            }
         });
         wrapperEl.addEventListener('mouseup', () => {
-            fireEvent(widget, 'on_release');
+            if (type !== 'slider' && type !== 'arc') {
+                fireEvent(widget, 'on_release');
+            }
         });
         wrapperEl.addEventListener('click', () => {
             fireEvent(widget, 'on_click');
@@ -214,9 +245,18 @@ const PreviewMode = (() => {
 
     function attachSliderInteraction(widget, wrapperEl) {
         const vertical = widget.height > widget.width;
-        let dragging = false;
+        wrapperEl.style.cursor = 'pointer';
 
-        const updateSliderValue = (e) => {
+        // Show value tooltip
+        const valueDisplay = document.createElement('div');
+        valueDisplay.className = 'preview-value-display';
+        valueDisplay.textContent = getWidgetValue(widget);
+        valueDisplay.style.top = '-18px';
+        valueDisplay.style.left = '50%';
+        valueDisplay.style.transform = 'translateX(-50%)';
+        wrapperEl.appendChild(valueDisplay);
+
+        const computeValue = (e) => {
             const rect = wrapperEl.getBoundingClientRect();
             const min = widget.properties.min_value ?? 0;
             const max = widget.properties.max_value ?? 100;
@@ -227,50 +267,73 @@ const PreviewMode = (() => {
                 pct = (e.clientX - rect.left) / rect.width;
             }
             pct = Math.max(0, Math.min(1, pct));
-            const val = Math.round(min + pct * (max - min));
-            setWidgetValue(widget, val);
-            fireEvent(widget, 'on_value_change');
-            renderPreview();
+            return Math.round(min + pct * (max - min));
         };
 
-        wrapperEl.style.cursor = 'pointer';
-        wrapperEl.addEventListener('mousedown', (e) => {
-            dragging = true;
-            updateSliderValue(e);
-            e.stopPropagation();
-        });
+        // Update slider visual inline (no full re-render) during drag
+        const updateSliderVisual = (val) => {
+            const min = widget.properties.min_value ?? 0;
+            const max = widget.properties.max_value ?? 100;
+            const pct = ((val - min) / (max - min)) * 100;
 
-        document.addEventListener('mousemove', (e) => {
-            if (dragging) updateSliderValue(e);
-        });
-
-        document.addEventListener('mouseup', () => {
-            if (dragging) {
-                dragging = false;
-                fireEvent(widget, 'on_release');
+            // Update the indicator bar
+            const indicator = wrapperEl.querySelector('.lvgl-slider-indicator');
+            if (indicator) {
+                if (vertical) {
+                    indicator.style.height = pct + '%';
+                } else {
+                    indicator.style.width = pct + '%';
+                }
             }
-        });
 
-        // Show value tooltip
-        const valueDisplay = document.createElement('div');
-        valueDisplay.className = 'preview-value-display';
-        const val = getWidgetValue(widget);
-        valueDisplay.textContent = val;
-        if (vertical) {
-            valueDisplay.style.top = '-18px';
-            valueDisplay.style.left = '50%';
-            valueDisplay.style.transform = 'translateX(-50%)';
-        } else {
-            valueDisplay.style.top = '-18px';
-            valueDisplay.style.left = '50%';
-            valueDisplay.style.transform = 'translateX(-50%)';
-        }
-        wrapperEl.appendChild(valueDisplay);
+            // Update the knob position (matching renderer pixel math)
+            const knob = wrapperEl.querySelector('.lvgl-slider-knob');
+            if (knob) {
+                if (vertical) {
+                    const knobH = parseFloat(knob.style.height) || 20;
+                    const trackH = widget.height;
+                    const knobPos = trackH - (pct / 100 * trackH) - knobH / 2;
+                    knob.style.top = knobPos + 'px';
+                } else {
+                    const knobW = parseFloat(knob.style.width) || 20;
+                    const trackW = widget.width;
+                    const knobPos = (pct / 100 * trackW) - knobW / 2;
+                    knob.style.left = knobPos + 'px';
+                }
+            }
+
+            // Update value display
+            valueDisplay.textContent = val;
+        };
+
+        wrapperEl.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            fireEvent(widget, 'on_press');
+
+            const val = computeValue(e);
+            setWidgetValue(widget, val);
+            updateSliderVisual(val);
+            fireEvent(widget, 'on_value_change');
+
+            activeDrag = {
+                onMove: (me) => {
+                    const v = computeValue(me);
+                    setWidgetValue(widget, v);
+                    updateSliderVisual(v);
+                    fireEvent(widget, 'on_value_change');
+                },
+                onUp: () => {
+                    fireEvent(widget, 'on_release');
+                },
+            };
+        });
     }
 
     function attachArcInteraction(widget, wrapperEl) {
         wrapperEl.style.cursor = 'pointer';
-        const updateArcValue = (e) => {
+
+        const computeArcValue = (e) => {
             const rect = wrapperEl.getBoundingClientRect();
             const cx = rect.left + rect.width / 2;
             const cy = rect.top + rect.height / 2;
@@ -288,22 +351,31 @@ const PreviewMode = (() => {
 
             const min = widget.properties.min_value ?? 0;
             const max = widget.properties.max_value ?? 100;
-            const val = Math.round(min + pct * (max - min));
+            return Math.round(min + pct * (max - min));
+        };
+
+        wrapperEl.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            fireEvent(widget, 'on_press');
+
+            const val = computeArcValue(e);
             setWidgetValue(widget, val);
             fireEvent(widget, 'on_value_change');
             renderPreview();
-        };
 
-        let dragging = false;
-        wrapperEl.addEventListener('mousedown', (e) => {
-            dragging = true;
-            updateArcValue(e);
-            e.stopPropagation();
+            activeDrag = {
+                onMove: (me) => {
+                    const v = computeArcValue(me);
+                    setWidgetValue(widget, v);
+                    fireEvent(widget, 'on_value_change');
+                    renderPreview();
+                },
+                onUp: () => {
+                    fireEvent(widget, 'on_release');
+                },
+            };
         });
-        document.addEventListener('mousemove', (e) => {
-            if (dragging) updateArcValue(e);
-        });
-        document.addEventListener('mouseup', () => { dragging = false; });
     }
 
     function attachSwitchInteraction(widget, wrapperEl) {
