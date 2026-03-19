@@ -24,8 +24,9 @@
             <span class="toolbar-sep"></span>
             <label>Display:
                 <select id="display-size">
+                    <option value="170x320" selected>170x320 (Lanbon L9)</option>
                     <option value="320x240">320x240 (QVGA)</option>
-                    <option value="480x320" selected>480x320 (HVGA)</option>
+                    <option value="480x320">480x320 (HVGA)</option>
                     <option value="800x480">800x480 (WVGA)</option>
                     <option value="240x240">240x240 (Square)</option>
                     <option value="128x128">128x128 (Small)</option>
@@ -34,6 +35,9 @@
             </label>
         </div>
         <div class="toolbar-right">
+            <button id="btn-save" title="Save Project (Ctrl+S)">&#128427; Save</button>
+            <button id="btn-load" title="Load Project">&#128449; Load</button>
+            <span class="toolbar-sep"></span>
             <button id="btn-validate" title="Validate YAML">&#10003; Validate</button>
             <button id="btn-export" title="Export YAML">&#128190; Export</button>
             <button id="btn-import" title="Import YAML">&#128194; Import</button>
@@ -135,6 +139,22 @@
                 <div class="modal-actions">
                     <button id="btn-import-confirm">Import</button>
                     <button class="btn-cancel modal-close">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load Project Modal -->
+    <div id="load-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span>Load Project</span>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="saved-projects-list"></div>
+                <div class="modal-actions" style="margin-top:8px;">
+                    <button class="btn-cancel modal-close">Close</button>
                 </div>
             </div>
         </div>

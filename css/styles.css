@@ -1238,3 +1238,67 @@ label {
     color: #707090;
     font-size: 11px;
 }
+
+/* ---- Saved Projects ---- */
+.saved-project-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    gap: 12px;
+}
+.saved-project-item:last-child {
+    border-bottom: none;
+}
+.saved-project-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.saved-project-info strong {
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.saved-project-info small {
+    color: var(--text-muted);
+    font-size: 11px;
+}
+.saved-project-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+.saved-project-actions button {
+    padding: 3px 10px;
+    font-size: 11px;
+}
+.saved-project-actions .btn-danger {
+    background: var(--error);
+    color: #fff;
+}
+
+/* ---- Toast ---- */
+#toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: var(--bg-surface);
+    color: var(--text);
+    border: 1px solid var(--accent);
+    padding: 8px 20px;
+    border-radius: 6px;
+    font-size: 13px;
+    opacity: 0;
+    transition: transform 0.3s ease, opacity 0.3s ease;
+    z-index: 10000;
+    pointer-events: none;
+}
+#toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}

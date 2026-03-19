@@ -10,7 +10,7 @@ const Designer = (() => {
         pages: [{ id: 'main_page', name: 'Main', widgets: [] }],
         currentPageIndex: 0,
         selectedWidgetId: null,
-        displayWidth: 480,
+        displayWidth: 170,
         displayHeight: 320,
         nextId: 1,
         undoStack: [],

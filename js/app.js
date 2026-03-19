@@ -39,8 +39,44 @@
         setupDisplaySizeSelector();
         setupModeToggle();
 
+        // Ctrl+S to save
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                saveProject();
+            }
+        });
+
+        // Auto-load last project
+        autoLoadLastProject();
+
         // Initial YAML sync
         YAMLEngine.updateEditorFromState(Designer.getState());
+    }
+
+    function autoLoadLastProject() {
+        const lastName = localStorage.getItem('lvgl-designer-last-project');
+        if (!lastName) return;
+        const projects = getProjects();
+        if (!projects[lastName]) return;
+        // Silently restore without prompts
+        const proj = projects[lastName];
+        Designer.setState(proj.state);
+
+        const sizeSelect = document.getElementById('display-size');
+        if (sizeSelect && proj.displaySize) {
+            const match = Array.from(sizeSelect.options).find(o => o.value === proj.displaySize);
+            if (match) {
+                sizeSelect.value = proj.displaySize;
+            } else if (proj.displaySize !== 'custom') {
+                const opt = document.createElement('option');
+                opt.value = proj.displaySize;
+                const [w, h] = proj.displaySize.split('x');
+                opt.textContent = `${w}x${h} (Custom)`;
+                sizeSelect.insertBefore(opt, sizeSelect.querySelector('[value="custom"]'));
+                sizeSelect.value = proj.displaySize;
+            }
+        }
     }
 
     // ---- Widget Palette ----
@@ -151,10 +187,125 @@
             document.getElementById('import-modal')?.classList.remove('hidden');
         });
 
+        document.getElementById('btn-save')?.addEventListener('click', () => saveProject());
+        document.getElementById('btn-load')?.addEventListener('click', () => showLoadModal());
+
         document.getElementById('btn-add-page')?.addEventListener('click', () => {
             Designer.addPage();
         });
     }
+
+    // ---- Project Save/Load ----
+    const STORAGE_KEY = 'lvgl-designer-projects';
+
+    function getProjects() {
+        try {
+            return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+        } catch { return {}; }
+    }
+
+    function saveProject() {
+        const projects = getProjects();
+        const state = Designer.getState();
+        const defaultName = state.projectName || 'Untitled';
+        const name = prompt('Project name:', defaultName);
+        if (!name) return;
+
+        const sizeSelect = document.getElementById('display-size');
+        projects[name] = {
+            state: state,
+            displaySize: sizeSelect ? sizeSelect.value : `${state.displayWidth}x${state.displayHeight}`,
+            savedAt: new Date().toISOString(),
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
+
+        // Auto-save also stores last-used project name
+        localStorage.setItem('lvgl-designer-last-project', name);
+        showToast('Project saved: ' + name);
+    }
+
+    function loadProject(name) {
+        const projects = getProjects();
+        const proj = projects[name];
+        if (!proj) return;
+
+        Designer.setState(proj.state);
+
+        // Restore display size in dropdown
+        const sizeSelect = document.getElementById('display-size');
+        if (sizeSelect && proj.displaySize) {
+            const match = Array.from(sizeSelect.options).find(o => o.value === proj.displaySize);
+            if (match) {
+                sizeSelect.value = proj.displaySize;
+            } else if (proj.displaySize !== 'custom') {
+                // Add custom option if size isn't in presets
+                const opt = document.createElement('option');
+                opt.value = proj.displaySize;
+                const [w, h] = proj.displaySize.split('x');
+                opt.textContent = `${w}x${h} (Custom)`;
+                sizeSelect.insertBefore(opt, sizeSelect.querySelector('[value="custom"]'));
+                sizeSelect.value = proj.displaySize;
+            }
+        }
+
+        YAMLEngine.updateEditorFromState(Designer.getState());
+        localStorage.setItem('lvgl-designer-last-project', name);
+        document.getElementById('load-modal')?.classList.add('hidden');
+        showToast('Loaded: ' + name);
+    }
+
+    function deleteProject(name) {
+        if (!confirm('Delete project "' + name + '"?')) return;
+        const projects = getProjects();
+        delete projects[name];
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
+        showLoadModal(); // refresh list
+    }
+
+    function showLoadModal() {
+        const modal = document.getElementById('load-modal');
+        const list = document.getElementById('saved-projects-list');
+        if (!modal || !list) return;
+
+        const projects = getProjects();
+        const names = Object.keys(projects);
+
+        if (names.length === 0) {
+            list.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:16px;">No saved projects yet.</p>';
+        } else {
+            list.innerHTML = names.map(name => {
+                const proj = projects[name];
+                const date = proj.savedAt ? new Date(proj.savedAt).toLocaleString() : '';
+                return `<div class="saved-project-item">
+                    <div class="saved-project-info">
+                        <strong>${escapeHtml(name)}</strong>
+                        <small>${escapeHtml(proj.displaySize || '')} &middot; ${escapeHtml(date)}</small>
+                    </div>
+                    <div class="saved-project-actions">
+                        <button onclick="AppActions.loadProject('${escapeHtml(name.replace(/'/g, "\\'"))}')">Load</button>
+                        <button class="btn-danger" onclick="AppActions.deleteProject('${escapeHtml(name.replace(/'/g, "\\'"))}')">Delete</button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        modal.classList.remove('hidden');
+    }
+
+    function showToast(message) {
+        let toast = document.getElementById('toast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'toast';
+            document.body.appendChild(toast);
+        }
+        toast.textContent = message;
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 2000);
+    }
+
+    // Expose actions for inline onclick handlers
+    window.AppActions = { loadProject, deleteProject };
 
     // ---- Display Size Selector ----
     function setupDisplaySizeSelector() {
@@ -164,11 +315,22 @@
         select.addEventListener('change', (e) => {
             const val = e.target.value;
             if (val === 'custom') {
-                const w = prompt('Width (px):', '480');
+                const w = prompt('Width (px):', '170');
                 const h = prompt('Height (px):', '320');
                 if (w && h) {
-                    Designer.setDisplaySize(parseInt(w), parseInt(h));
+                    const pw = parseInt(w), ph = parseInt(h);
+                    const sizeStr = pw + 'x' + ph;
+                    // Add as a selectable option so it persists in the dropdown
+                    const opt = document.createElement('option');
+                    opt.value = sizeStr;
+                    opt.textContent = `${pw}x${ph} (Custom)`;
+                    select.insertBefore(opt, select.querySelector('[value="custom"]'));
+                    select.value = sizeStr;
+                    Designer.setDisplaySize(pw, ph);
                     Designer.renderAll();
+                } else {
+                    // Revert dropdown if cancelled
+                    select.value = Designer.getState().displayWidth + 'x' + Designer.getState().displayHeight;
                 }
             } else {
                 const [w, h] = val.split('x').map(Number);
