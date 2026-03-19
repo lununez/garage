@@ -1315,3 +1315,67 @@ label {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
 }
+
+/* ---- Font Selector ---- */
+.font-selector-row {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+.font-selector-row .font-select {
+    flex: 1;
+    min-width: 0;
+}
+.font-manage-btn {
+    padding: 2px 6px;
+    font-size: 11px;
+    font-weight: 700;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    color: var(--accent);
+    border-radius: 3px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.font-manage-btn:hover {
+    background: var(--accent);
+    color: var(--bg-panel);
+}
+
+/* ---- Font Manager Modal ---- */
+.font-item {
+    padding: 6px 8px;
+    border-radius: 4px;
+    margin-bottom: 4px;
+    font-size: 12px;
+}
+.font-item.builtin {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--bg-surface);
+}
+.font-item.builtin .font-item-id {
+    font-size: 10px;
+    color: var(--text-secondary);
+    font-family: monospace;
+}
+.font-item.project {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+}
+.font-item .font-item-name {
+    font-weight: 600;
+}
+.font-remove-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+}
+.font-remove-btn:hover {
+    color: #ff5555;
+}

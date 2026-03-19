@@ -661,7 +661,7 @@ const Designer = (() => {
 
                 // Show commonly used style props
                 const commonProps = ['bg_color', 'bg_opa', 'radius', 'border_color', 'border_width',
-                                    'text_color', 'opa', 'pad_all', 'shadow_color', 'shadow_width'];
+                                    'text_color', 'text_font', 'opa', 'pad_all', 'shadow_color', 'shadow_width'];
                 for (const prop of commonProps) {
                     const propDef = LVGLWidgets.STYLE_PROPS[prop];
                     if (!propDef) continue;
@@ -762,6 +762,12 @@ const Designer = (() => {
 
     function renderStyleInput(part, prop, propDef, value) {
         const dataAttr = `data-style-part="${part}" data-style-prop="${prop}"`;
+
+        // Special rendering for text_font — show font dropdown
+        if (prop === 'text_font') {
+            return renderFontSelector(dataAttr, value);
+        }
+
         switch (propDef.type) {
             case 'color':
                 const colorVal = LVGLRenderer.parseColor(value) || '#000000';
@@ -778,6 +784,39 @@ const Designer = (() => {
             default:
                 return `<input type="text" value="${escapeAttr(String(value ?? ''))}" ${dataAttr}>`;
         }
+    }
+
+    function renderFontSelector(dataAttr, value) {
+        const fonts = FontManager.getAllFonts();
+        const builtinFonts = FontManager.getBuiltinFonts();
+        const projectFonts = FontManager.getProjectFonts();
+        let opts = `<option value="" ${!value ? 'selected' : ''}>(default)</option>`;
+
+        if (projectFonts.length > 0) {
+            opts += '<optgroup label="Project Fonts">';
+            for (const f of projectFonts) {
+                opts += `<option value="${f.id}" ${f.id === value ? 'selected' : ''}>${f.label || f.id} (${f.size}px)</option>`;
+            }
+            opts += '</optgroup>';
+        }
+
+        opts += '<optgroup label="Built-in (LVGL)">';
+        for (const f of builtinFonts) {
+            opts += `<option value="${f.id}" ${f.id === value ? 'selected' : ''}>${f.label}</option>`;
+        }
+        opts += '</optgroup>';
+
+        // Check if current value is a custom string not in our font lists
+        const isCustom = value && !fonts.some(f => f.id === value);
+        if (isCustom) {
+            opts = `<option value="${escapeAttr(value)}" selected>${value}</option>` + opts;
+        }
+
+        let html = `<div class="font-selector-row">`;
+        html += `<select ${dataAttr} class="font-select">${opts}</select>`;
+        html += `<button class="font-manage-btn" title="Manage Fonts" data-action="manage-fonts">F</button>`;
+        html += `</div>`;
+        return html;
     }
 
     function attachPropertyEvents() {
@@ -843,6 +882,14 @@ const Designer = (() => {
                 updateWidgetStyle(state.selectedWidgetId, part, prop, val);
             };
             input.addEventListener('change', handler);
+        });
+
+        // Font manage buttons
+        propertiesPanel.querySelectorAll('[data-action="manage-fonts"]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                FontManager.showModal();
+            });
         });
 
         // Section header toggles

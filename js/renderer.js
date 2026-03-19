@@ -111,10 +111,16 @@ const LVGLRenderer = (() => {
             if (justifyMap[styles.text_align]) s.justifyContent = justifyMap[styles.text_align];
         }
 
-        // Text font size (parse from ESPHome font references or numeric sizes)
+        // Text font — use FontManager for full CSS or fallback to size extraction
         if (styles.text_font) {
-            const sizeMatch = String(styles.text_font).match(/(\d+)/);
-            if (sizeMatch) s.fontSize = sizeMatch[1] + 'px';
+            if (typeof FontManager !== 'undefined') {
+                const css = FontManager.getFontCSS(styles.text_font);
+                if (css.fontSize) s.fontSize = css.fontSize;
+                if (css.fontFamily) s.fontFamily = css.fontFamily;
+            } else {
+                const sizeMatch = String(styles.text_font).match(/(\d+)/);
+                if (sizeMatch) s.fontSize = sizeMatch[1] + 'px';
+            }
         }
 
         // Letter and line spacing
@@ -214,9 +220,16 @@ const LVGLRenderer = (() => {
                 const childLabel = widget.children.find(c => c.type === 'label');
                 if (childLabel) {
                     renderLabelText(el, childLabel.properties?.text || '');
-                    // Apply child label's text color and alignment
+                    // Apply child label's styles (text color, font)
                     const childTc = parseColor(childLabel.styles?.main?.text_color);
                     if (childTc) el.style.color = childTc;
+                    if (childLabel.styles?.main?.text_font) {
+                        const css = typeof FontManager !== 'undefined'
+                            ? FontManager.getFontCSS(childLabel.styles.main.text_font)
+                            : {};
+                        if (css.fontSize) el.style.fontSize = css.fontSize;
+                        if (css.fontFamily) el.style.fontFamily = css.fontFamily;
+                    }
                     const childAlign = childLabel.properties?.text_align || childLabel.styles?.main?.text_align;
                     if (childAlign) {
                         const justifyMap = { LEFT: 'flex-start', CENTER: 'center', RIGHT: 'flex-end' };

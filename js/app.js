@@ -28,6 +28,13 @@
             },
         });
 
+        // Initialize Font Manager — re-render on font changes
+        FontManager.init([]);
+        FontManager.onChange(() => {
+            Designer.renderAll();
+            YAMLEngine.updateEditorFromState(Designer.getState());
+        });
+
         // Initialize Preview Mode
         PreviewMode.init();
 
@@ -62,6 +69,7 @@
         // Silently restore without prompts
         const proj = projects[lastName];
         Designer.setState(proj.state);
+        FontManager.init(proj.fonts || []);
 
         const sizeSelect = document.getElementById('display-size');
         if (sizeSelect && proj.displaySize) {
@@ -189,6 +197,7 @@
 
         document.getElementById('btn-save')?.addEventListener('click', () => saveProject());
         document.getElementById('btn-load')?.addEventListener('click', () => showLoadModal());
+        document.getElementById('btn-fonts')?.addEventListener('click', () => FontManager.showModal());
 
         document.getElementById('btn-add-page')?.addEventListener('click', () => {
             Designer.addPage();
@@ -214,6 +223,7 @@
         const sizeSelect = document.getElementById('display-size');
         projects[name] = {
             state: state,
+            fonts: FontManager.getProjectFonts(),
             displaySize: sizeSelect ? sizeSelect.value : `${state.displayWidth}x${state.displayHeight}`,
             savedAt: new Date().toISOString(),
         };
@@ -230,6 +240,7 @@
         if (!proj) return;
 
         Designer.setState(proj.state);
+        FontManager.init(proj.fonts || []);
 
         // Restore display size in dropdown
         const sizeSelect = document.getElementById('display-size');

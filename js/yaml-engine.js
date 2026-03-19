@@ -81,11 +81,17 @@ const YAMLEngine = (() => {
      * Generate ESPHome LVGL YAML from designer state.
      */
     function generateYAML(designerState) {
-        const doc = {
-            lvgl: {
-                pages: [],
-            },
-        };
+        const doc = {};
+
+        // Font declarations
+        if (typeof FontManager !== 'undefined') {
+            const fontYaml = FontManager.toYAML();
+            if (fontYaml && fontYaml.length > 0) {
+                doc.font = fontYaml;
+            }
+        }
+
+        doc.lvgl = { pages: [] };
 
         for (const page of designerState.pages) {
             const pageObj = {
@@ -298,6 +304,11 @@ const YAMLEngine = (() => {
         const result = {
             pages: [],
         };
+
+        // Parse font declarations
+        if (doc.font && typeof FontManager !== 'undefined') {
+            FontManager.fromYAML(doc.font);
+        }
 
         // Handle different YAML structures
         let lvglConfig = doc;
