@@ -86,6 +86,17 @@ const YAMLEngine = (() => {
             // These are already correct, no change needed
         }
 
+        // Ensure 0xRRGGBB color values are always quoted strings, not bare hex literals
+        // js-yaml may dump them unquoted which YAML parsers interpret as integers
+        result = result.replace(/:\s+(0x[0-9A-Fa-f]{6})\s*$/gm, (match, hex) => {
+            return ': "' + hex + '"';
+        });
+
+        // Ensure percentage values (like opacity "100%") are quoted
+        result = result.replace(/:\s+(\d+%)\s*$/gm, (match, pct) => {
+            return ': "' + pct + '"';
+        });
+
         return result;
     }
 
@@ -249,7 +260,7 @@ const YAMLEngine = (() => {
                     if (val !== null && val !== undefined && val !== '' && val !== propDef.default) {
                         const part = propDef.stylePart || 'main';
                         if (!inner[part]) inner[part] = {};
-                        inner[part][key] = val;
+                        inner[part][key] = formatStyleValue(key, val);
                     }
                     continue;
                 }
@@ -409,6 +420,46 @@ const YAMLEngine = (() => {
         // Color values: convert #RRGGBB to 0xRRGGBB for ESPHome
         if (prop.includes('color') && typeof val === 'string' && val.startsWith('#')) {
             return '0x' + val.slice(1).toUpperCase();
+        }
+        // Opacity values: convert 0-255 integers to percentage strings for ESPHome
+        if (prop === 'opa' || prop.endsWith('_opa')) {
+            return formatOpacityValue(val);
+        }
+        return val;
+    }
+
+    /**
+     * Format opacity value for ESPHome YAML.
+     * ESPHome expects percentage strings ("100%", "50%") or named constants (TRANSP, COVER).
+     * The designer may store values as 0-255 integers.
+     */
+    function formatOpacityValue(val) {
+        if (val === null || val === undefined || val === '') return val;
+        const strVal = String(val).trim();
+        // Named constants pass through as-is
+        if (strVal.toUpperCase() === 'TRANSP' || strVal.toUpperCase() === 'COVER') {
+            return strVal.toUpperCase();
+        }
+        // Already a percentage string — pass through
+        if (strVal.endsWith('%')) {
+            return strVal;
+        }
+        // Numeric value: convert 0-255 range to 0-100% for ESPHome
+        const num = parseFloat(strVal);
+        if (!isNaN(num)) {
+            if (num > 1 && num <= 255) {
+                // 0-255 range → percentage
+                const pct = Math.round((num / 255) * 100);
+                return pct + '%';
+            } else if (num >= 0 && num <= 1) {
+                // 0-1 float → percentage
+                return Math.round(num * 100) + '%';
+            } else if (num === 0) {
+                return '0%';
+            }
+            // Already looks like a percentage value without the sign (e.g. user typed "50")
+            // Treat values in 0-100 range as percentage if they were entered as plain numbers
+            return Math.round(num) + '%';
         }
         return val;
     }
@@ -645,6 +696,9 @@ const YAMLEngine = (() => {
             results.push({ type: 'warning', message: 'Missing top-level "lvgl:" key. ESPHome expects this.' });
         }
 
+        // Track all IDs globally — ESPHome requires unique IDs across all pages
+        const globalIds = new Set();
+
         if (lvglConfig.pages) {
             if (!Array.isArray(lvglConfig.pages)) {
                 results.push({ type: 'error', message: '"pages" must be a list' });
@@ -657,6 +711,10 @@ const YAMLEngine = (() => {
                             results.push({ type: 'error', message: `Duplicate page ID: "${page.id}"` });
                         }
                         pageIds.add(page.id);
+                        if (globalIds.has(page.id)) {
+                            results.push({ type: 'error', message: `Page ID "${page.id}" conflicts with a widget ID` });
+                        }
+                        globalIds.add(page.id);
 
                         if (!isValidId(page.id)) {
                             results.push({ type: 'error', message: `Invalid page ID "${page.id}": must be a valid C identifier` });
@@ -664,14 +722,14 @@ const YAMLEngine = (() => {
                     }
 
                     if (page.widgets) {
-                        validateWidgets(page.widgets, results, `pages[${i}]`);
+                        validateWidgets(page.widgets, results, `pages[${i}]`, globalIds);
                     }
                 }
             }
         }
 
         if (lvglConfig.widgets) {
-            validateWidgets(lvglConfig.widgets, results, 'root');
+            validateWidgets(lvglConfig.widgets, results, 'root', globalIds);
         }
 
         if (results.length === 0) {
@@ -681,13 +739,14 @@ const YAMLEngine = (() => {
         return results;
     }
 
-    function validateWidgets(widgets, results, path) {
+    function validateWidgets(widgets, results, path, globalIds) {
         if (!Array.isArray(widgets)) {
             results.push({ type: 'error', message: `${path}.widgets must be a list` });
             return;
         }
 
-        const widgetIds = new Set();
+        // Use global ID set if provided, otherwise create local one
+        const widgetIds = globalIds || new Set();
         for (let i = 0; i < widgets.length; i++) {
             const widgetYaml = widgets[i];
             const type = Object.keys(widgetYaml)[0];
@@ -707,7 +766,7 @@ const YAMLEngine = (() => {
 
             if (props.id) {
                 if (widgetIds.has(props.id)) {
-                    results.push({ type: 'error', message: `${wPath}: Duplicate widget ID "${props.id}"` });
+                    results.push({ type: 'error', message: `${wPath}: Duplicate ID "${props.id}" (IDs must be globally unique across all pages)` });
                 }
                 widgetIds.add(props.id);
                 if (!isValidId(props.id)) {
@@ -770,7 +829,7 @@ const YAMLEngine = (() => {
             }
 
             if (props.widgets) {
-                validateWidgets(props.widgets, results, wPath);
+                validateWidgets(props.widgets, results, wPath, widgetIds);
             }
         }
     }

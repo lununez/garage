@@ -170,7 +170,12 @@ const FontManager = (() => {
             obj.id = f.id;
             obj.size = f.size;
             if (f.bpp) obj.bpp = f.bpp;
-            if (f.glyphs) obj.glyphs = f.glyphs;
+            // Only emit glyphs if it's a safe ASCII hex range (e.g. "0x20-0x7E")
+            // Skip unicode escape ranges like "\U000F..." which cause ESPHome parse errors
+            // Those belong in extras, not the top-level glyphs key
+            if (f.glyphs && !f.glyphs.includes('\\U') && !f.glyphs.includes('\U')) {
+                obj.glyphs = f.glyphs;
+            }
             if (f.extras && f.extras.length > 0) {
                 obj.extras = f.extras;
             }

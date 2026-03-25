@@ -777,7 +777,7 @@ const Designer = (() => {
             case 'text':
                 return `<textarea data-widget-prop="${key}" rows="3">${escapeHtml(value || '')}</textarea>`;
             case 'opacity':
-                return `<input type="text" value="${value ?? ''}" data-widget-prop="${key}" placeholder="0-255 or TRANSP/COVER">`;
+                return `<input type="text" value="${value ?? ''}" data-widget-prop="${key}" placeholder="0-100% or TRANSP/COVER">`;
             case 'size':
                 return `<input type="text" value="${value ?? ''}" data-widget-prop="${key}" placeholder="px or %">`;
             default:
@@ -800,7 +800,7 @@ const Designer = (() => {
             case 'number':
                 return `<input type="number" value="${value ?? ''}" ${dataAttr} ${propDef.min !== undefined ? `min="${propDef.min}"` : ''}>`;
             case 'opacity':
-                return `<input type="text" value="${value ?? ''}" ${dataAttr} placeholder="0-255 or TRANSP/COVER">`;
+                return `<input type="text" value="${value ?? ''}" ${dataAttr} placeholder="0-100% or TRANSP/COVER">`;
             case 'boolean':
                 return `<input type="checkbox" ${value ? 'checked' : ''} ${dataAttr}>`;
             case 'enum':
