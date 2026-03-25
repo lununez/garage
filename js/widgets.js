@@ -10,7 +10,11 @@ const LVGLWidgets = (() => {
     const STYLE_PROPS = {
         bg_color:    { type: 'color', default: null, label: 'Background Color' },
         bg_opa:      { type: 'opacity', default: null, label: 'Background Opacity' },
-        bg_grad:     { type: 'string', default: null, label: 'Background Gradient' },
+        bg_grad_color: { type: 'color', default: null, label: 'Gradient Color' },
+        bg_grad_dir:   { type: 'enum', default: null, label: 'Gradient Direction', options: ['', 'NONE', 'HOR', 'VER'] },
+        bg_main_stop:  { type: 'number', default: null, label: 'Gradient Start', min: 0, max: 255 },
+        bg_grad_stop:  { type: 'number', default: null, label: 'Gradient End', min: 0, max: 255 },
+        bg_dither_mode: { type: 'enum', default: null, label: 'Dither Mode', options: ['', 'NONE', 'ORDERED', 'ERR_DIFF'] },
         border_color:{ type: 'color', default: null, label: 'Border Color' },
         border_width:{ type: 'number', default: null, label: 'Border Width', min: 0 },
         border_opa:  { type: 'opacity', default: null, label: 'Border Opacity' },

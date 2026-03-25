@@ -655,16 +655,58 @@ const Designer = (() => {
         // Style sections for each part
         if (def && def.parts) {
             for (const part of def.parts) {
-                html += `<div class="prop-section">`;
-                html += `<div class="prop-section-header${part === 'main' ? ' expanded' : ''}">${part.charAt(0).toUpperCase() + part.slice(1)} Style</div>`;
-                html += `<div class="prop-section-body">`;
-
                 const partStyles = widget.styles?.[part] || {};
+                const partLabel = part.charAt(0).toUpperCase() + part.slice(1);
 
-                // Show commonly used style props
-                const commonProps = ['bg_color', 'bg_opa', 'radius', 'border_color', 'border_width',
-                                    'text_color', 'text_font', 'opa', 'pad_all', 'shadow_color', 'shadow_width'];
-                for (const prop of commonProps) {
+                // Main style group: background, border, general
+                html += `<div class="prop-section">`;
+                html += `<div class="prop-section-header${part === 'main' ? ' expanded' : ''}">${partLabel} Style</div>`;
+                html += `<div class="prop-section-body">`;
+                const baseProps = ['bg_color', 'bg_opa', 'radius', 'border_color', 'border_width',
+                                    'text_color', 'text_font', 'text_opa', 'text_letter_space',
+                                    'opa', 'pad_all'];
+                for (const prop of baseProps) {
+                    const propDef = LVGLWidgets.STYLE_PROPS[prop];
+                    if (!propDef) continue;
+                    const val = partStyles[prop] ?? '';
+                    html += propRow(propDef.label, renderStyleInput(part, prop, propDef, val));
+                }
+                html += `</div></div>`;
+
+                // Gradient group (only for main and indicator parts)
+                if (part === 'main' || part === 'indicator') {
+                    html += `<div class="prop-section">`;
+                    html += `<div class="prop-section-header">${partLabel} Gradient</div>`;
+                    html += `<div class="prop-section-body">`;
+                    const gradProps = ['bg_grad_color', 'bg_grad_dir', 'bg_main_stop', 'bg_grad_stop', 'bg_dither_mode'];
+                    for (const prop of gradProps) {
+                        const propDef = LVGLWidgets.STYLE_PROPS[prop];
+                        if (!propDef) continue;
+                        const val = partStyles[prop] ?? '';
+                        html += propRow(propDef.label, renderStyleInput(part, prop, propDef, val));
+                    }
+                    html += `</div></div>`;
+                }
+
+                // Shadow / Glow group
+                html += `<div class="prop-section">`;
+                const isTextWidget = (widget.type === 'label' || widget.type === 'button');
+                html += `<div class="prop-section-header">${partLabel} ${isTextWidget && part === 'main' ? 'Shadow / Glow' : 'Shadow'}</div>`;
+                html += `<div class="prop-section-body">`;
+                // Glow presets for text widgets
+                if (isTextWidget && part === 'main') {
+                    html += `<div class="prop-row"><span class="prop-label">Glow Preset</span><div class="prop-input">`;
+                    html += `<select data-glow-preset="${part}">`;
+                    html += `<option value="">(custom)</option>`;
+                    html += `<option value="subtle">Subtle Glow</option>`;
+                    html += `<option value="medium">Medium Glow</option>`;
+                    html += `<option value="strong">Strong Glow</option>`;
+                    html += `<option value="neon">Neon</option>`;
+                    html += `<option value="none">None</option>`;
+                    html += `</select></div></div>`;
+                }
+                const shadowProps = ['shadow_color', 'shadow_width', 'shadow_spread', 'shadow_opa', 'shadow_ofs_x', 'shadow_ofs_y'];
+                for (const prop of shadowProps) {
                     const propDef = LVGLWidgets.STYLE_PROPS[prop];
                     if (!propDef) continue;
                     const val = partStyles[prop] ?? '';
@@ -914,6 +956,63 @@ const Designer = (() => {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 FontManager.showModal();
+            });
+        });
+
+        // Glow preset selectors
+        propertiesPanel.querySelectorAll('[data-glow-preset]').forEach(sel => {
+            sel.addEventListener('change', (e) => {
+                const part = e.target.dataset.glowPreset;
+                const preset = e.target.value;
+                if (!preset || !state.selectedWidgetId) return;
+                const widget = findWidgetById(state.selectedWidgetId, getCurrentPage().widgets);
+                if (!widget) return;
+
+                pushUndo();
+                if (!widget.styles[part]) widget.styles[part] = {};
+                const s = widget.styles[part];
+
+                // Read current text_color as default glow color
+                const textColor = s.text_color || '#00ccff';
+
+                if (preset === 'none') {
+                    delete s.shadow_color;
+                    delete s.shadow_width;
+                    delete s.shadow_spread;
+                    delete s.shadow_opa;
+                    delete s.shadow_ofs_x;
+                    delete s.shadow_ofs_y;
+                } else if (preset === 'subtle') {
+                    s.shadow_color = textColor;
+                    s.shadow_width = 4;
+                    s.shadow_spread = 1;
+                    delete s.shadow_opa;
+                    s.shadow_ofs_x = 0;
+                    s.shadow_ofs_y = 0;
+                } else if (preset === 'medium') {
+                    s.shadow_color = textColor;
+                    s.shadow_width = 8;
+                    s.shadow_spread = 2;
+                    delete s.shadow_opa;
+                    s.shadow_ofs_x = 0;
+                    s.shadow_ofs_y = 0;
+                } else if (preset === 'strong') {
+                    s.shadow_color = textColor;
+                    s.shadow_width = 16;
+                    s.shadow_spread = 4;
+                    delete s.shadow_opa;
+                    s.shadow_ofs_x = 0;
+                    s.shadow_ofs_y = 0;
+                } else if (preset === 'neon') {
+                    s.shadow_color = textColor;
+                    s.shadow_width = 24;
+                    s.shadow_spread = 8;
+                    delete s.shadow_opa;
+                    s.shadow_ofs_x = 0;
+                    s.shadow_ofs_y = 0;
+                }
+
+                renderAll();
             });
         });
 

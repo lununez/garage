@@ -46,6 +46,68 @@ const LVGLRenderer = (() => {
     }
 
     /**
+     * Convert a CSS color string to rgba with alpha.
+     */
+    function colorWithAlpha(cssColor, alpha) {
+        if (!cssColor) return cssColor;
+        // Parse hex color
+        let r = 0, g = 0, b = 0;
+        if (cssColor.startsWith('#')) {
+            const hex = cssColor.slice(1);
+            if (hex.length === 3) {
+                r = parseInt(hex[0] + hex[0], 16);
+                g = parseInt(hex[1] + hex[1], 16);
+                b = parseInt(hex[2] + hex[2], 16);
+            } else if (hex.length === 6) {
+                r = parseInt(hex.slice(0, 2), 16);
+                g = parseInt(hex.slice(2, 4), 16);
+                b = parseInt(hex.slice(4, 6), 16);
+            }
+            return `rgba(${r},${g},${b},${alpha.toFixed(2)})`;
+        }
+        return cssColor;
+    }
+
+    /**
+     * Apply text shadow/glow effect to a text element.
+     * In LVGL, shadow properties on labels create a glow effect around text.
+     * We render this as CSS text-shadow with multiple layers for a convincing glow.
+     */
+    function applyTextGlow(el, styles) {
+        if (!styles || !styles.shadow_color) return;
+        const sc = parseColor(styles.shadow_color);
+        if (!sc) return;
+        const sw = styles.shadow_width || 4;
+        const sox = styles.shadow_ofs_x || 0;
+        const soy = styles.shadow_ofs_y || 0;
+        const spread = styles.shadow_spread || 0;
+        const shadowOpa = parseOpacity(styles.shadow_opa);
+        let shadowColor = sc;
+        if (shadowOpa != null && shadowOpa < 1) {
+            shadowColor = colorWithAlpha(sc, shadowOpa);
+        }
+
+        // Build layered text-shadow for glow effect
+        // Multiple layers at increasing blur create a convincing glow
+        const totalBlur = sw + spread;
+        const shadows = [];
+        // Core sharp layer
+        shadows.push(`${sox}px ${soy}px ${Math.round(totalBlur * 0.3)}px ${shadowColor}`);
+        // Mid glow layer
+        shadows.push(`${sox}px ${soy}px ${Math.round(totalBlur * 0.7)}px ${shadowColor}`);
+        // Outer glow layer
+        shadows.push(`${sox}px ${soy}px ${totalBlur}px ${shadowColor}`);
+        // Extra soft outer for large glows
+        if (totalBlur > 6) {
+            shadows.push(`${sox}px ${soy}px ${Math.round(totalBlur * 1.5)}px ${shadowColor}`);
+        }
+
+        el.style.textShadow = shadows.join(', ');
+        // Remove box-shadow since this is text glow, not box glow
+        el.style.boxShadow = 'none';
+    }
+
+    /**
      * Apply common LVGL style properties to an HTML element.
      */
     function applyStyles(el, styles) {
@@ -59,7 +121,6 @@ const LVGLRenderer = (() => {
         if (bgOpa != null) {
             if (bgOpa === 0) s.backgroundColor = 'transparent';
             else if (bg) {
-                // Apply opacity to background only
                 s.backgroundColor = bg;
                 s.opacity = bgOpa;
             }
@@ -67,6 +128,19 @@ const LVGLRenderer = (() => {
 
         const opa = parseOpacity(styles.opa);
         if (opa != null) s.opacity = opa;
+
+        // Gradient fill
+        if (styles.bg_grad_dir && styles.bg_grad_dir !== 'NONE' && styles.bg_grad_color) {
+            const gradColor = parseColor(styles.bg_grad_color);
+            const baseColor = bg || '#000000';
+            if (gradColor) {
+                const dir = styles.bg_grad_dir === 'VER' ? 'to bottom' : 'to right';
+                // bg_main_stop and bg_grad_stop are 0-255, map to percentage
+                const mainStop = styles.bg_main_stop != null ? Math.round((styles.bg_main_stop / 255) * 100) : 0;
+                const gradStop = styles.bg_grad_stop != null ? Math.round((styles.bg_grad_stop / 255) * 100) : 100;
+                s.background = `linear-gradient(${dir}, ${baseColor} ${mainStop}%, ${gradColor} ${gradStop}%)`;
+            }
+        }
 
         if (styles.radius != null) s.borderRadius = styles.radius + 'px';
 
@@ -92,7 +166,13 @@ const LVGLRenderer = (() => {
             const sox = styles.shadow_ofs_x || 0;
             const soy = styles.shadow_ofs_y || 0;
             const spread = styles.shadow_spread || 0;
-            s.boxShadow = `${sox}px ${soy}px ${sw}px ${spread}px ${sc}`;
+            const shadowOpa = parseOpacity(styles.shadow_opa);
+            let shadowColor = sc;
+            // Apply shadow opacity via rgba
+            if (shadowOpa != null && shadowOpa < 1 && sc) {
+                shadowColor = colorWithAlpha(sc, shadowOpa);
+            }
+            s.boxShadow = `${sox}px ${soy}px ${sw}px ${spread}px ${shadowColor}`;
         }
 
         if (styles.outline_color) {
@@ -199,6 +279,11 @@ const LVGLRenderer = (() => {
             applyStyles(el, widget.styles?.main);
             const tc = parseColor(widget.styles?.main?.text_color);
             if (tc) el.style.color = tc;
+
+            // Apply text glow/shadow (renders as text-shadow instead of box-shadow)
+            if (widget.styles?.main?.shadow_color) {
+                applyTextGlow(el, widget.styles.main);
+            }
 
             // Apply text_align from property (convenience shortcut)
             const align = widget.properties.text_align || widget.styles?.main?.text_align;
@@ -585,6 +670,15 @@ const LVGLRenderer = (() => {
             el.style.backgroundColor = color;
             el.style.color = color;
             el.style.opacity = brightness;
+            applyStyles(el, widget.styles?.main);
+            // LED widgets naturally glow — apply shadow from styles or auto-generate
+            if (widget.styles?.main?.shadow_color) {
+                // User-defined shadow
+            } else if (brightness > 0.3) {
+                // Auto glow based on LED color and brightness
+                const glowSize = Math.round(8 * brightness);
+                el.style.boxShadow = `0 0 ${glowSize}px ${Math.round(glowSize * 0.5)}px ${color}`;
+            }
             return el;
         },
 
@@ -758,7 +852,7 @@ const LVGLRenderer = (() => {
         canvas(widget) {
             const el = document.createElement('div');
             el.className = 'lvgl-widget lvgl-canvas';
-            el.textContent = '[Canvas]';
+            applyStyles(el, widget.styles?.main);
             return el;
         },
 
