@@ -113,6 +113,16 @@ const YAMLEngine = (() => {
             return ': "' + content.trim() + '"';
         });
 
+        // Fix glyph sentinels: convert __GLYPH__\UXXXXXXXX to "\UXXXXXXXX"
+        // ESPHome convention: \U codepoints in double-quoted strings
+        result = result.replace(/"?'?__GLYPH__(\\[Uu][0-9A-Fa-f]+)"?'?/g, (match, cp) => {
+            return '"' + cp + '"';
+        });
+        // Also handle unquoted sentinel on its own line (list items)
+        result = result.replace(/- __GLYPH__(\\[Uu][0-9A-Fa-f]+)/g, (match, cp) => {
+            return '- "' + cp + '"';
+        });
+
         return result;
     }
 

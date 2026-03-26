@@ -40,12 +40,12 @@ const FontManager = (() => {
         'Inconsolata', 'Fira Code',
     ];
 
-    // Common glyph range presets
+    // Common glyph presets - ESPHome format
+    // Glyphs must be a LIST of strings. For \U codepoints, each is a separate list item.
+    // Character sets can be a single string containing all chars.
     const GLYPH_PRESETS = {
-        'ASCII': '0x20-0x7E',
-        'Latin Extended': '0x20-0x24F',
-        'MDI Icons': '\\U000F0001-\\U000F1AF0',
-        'Digits Only': '0x30-0x39',
+        'ASCII Printable': ' !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~',
+        'Digits + Symbols': '0123456789.,%:/-°',
         'Custom': '',
     };
 
@@ -217,16 +217,44 @@ const FontManager = (() => {
             obj.id = f.id;
             obj.size = f.size;
             if (f.bpp) obj.bpp = f.bpp;
-            // Pass through glyphs as-is, including \U escape ranges for custom MDI fonts.
-            // ESPHome expects arrays for \U glyphs (e.g. ["\U000F0360", "\U000F035D"]).
+            // ESPHome expects glyphs as a list of strings.
+            // Each \U codepoint should be a separate list item.
+            // Character strings like "ABC123" are single items.
             if (f.glyphs) {
-                obj.glyphs = f.glyphs;
+                obj.glyphs = formatGlyphsForYAML(f.glyphs);
             }
             if (f.extras && f.extras.length > 0) {
-                obj.extras = f.extras;
+                obj.extras = f.extras.map(e => ({
+                    file: e.file,
+                    glyphs: formatGlyphsForYAML(e.glyphs),
+                }));
             }
             return obj;
         });
+    }
+
+    /**
+     * Convert a glyphs value (string or array) into ESPHome-compliant list format.
+     * - Plain text like "ABC123" → ["ABC123"]
+     * - \U codepoints like "\U000F02D1,\U000F05D4" → ["\U000F02D1", "\U000F05D4"]
+     * - Already an array → pass through
+     */
+    function formatGlyphsForYAML(glyphs) {
+        if (Array.isArray(glyphs)) return glyphs;
+        if (typeof glyphs !== 'string' || !glyphs) return [glyphs];
+
+        const str = glyphs.trim();
+        // Check if it contains \U or \u codepoints
+        const unicodePattern = /\\U[0-9A-Fa-f]{8}|\\u[0-9A-Fa-f]{4}/g;
+        const matches = str.match(unicodePattern);
+        if (matches && matches.length > 0) {
+            // Extract all codepoints as individual list items
+            // Mark them with sentinel for post-processing to add double quotes
+            return matches.map(m => '__GLYPH__' + m);
+        }
+
+        // Plain character string — return as single-item list
+        return [str];
     }
 
     /**
@@ -249,8 +277,34 @@ const FontManager = (() => {
                 }
             }
             if (f.bpp) font.bpp = f.bpp;
-            if (f.glyphs) font.glyphs = f.glyphs;
-            if (f.extras) font.extras = f.extras;
+            // Normalize glyphs: ESPHome YAML has lists, store as comma-separated string for UI
+            if (f.glyphs) {
+                if (Array.isArray(f.glyphs)) {
+                    font.glyphs = f.glyphs.map(g => {
+                        // If g contains unicode chars (from YAML double-quote parsing),
+                        // convert back to \U escape format
+                        if (typeof g === 'string' && g.length <= 2 && g.codePointAt(0) > 0xFFFF) {
+                            return '\\U' + g.codePointAt(0).toString(16).toUpperCase().padStart(8, '0');
+                        }
+                        return String(g);
+                    }).join(',');
+                } else {
+                    font.glyphs = String(f.glyphs);
+                }
+            }
+            if (f.extras) {
+                font.extras = f.extras.map(e => ({
+                    file: e.file,
+                    glyphs: Array.isArray(e.glyphs)
+                        ? e.glyphs.map(g => {
+                            if (typeof g === 'string' && g.length <= 2 && g.codePointAt(0) > 0xFFFF) {
+                                return '\\U' + g.codePointAt(0).toString(16).toUpperCase().padStart(8, '0');
+                            }
+                            return String(g);
+                        }).join(',')
+                        : String(e.glyphs || ''),
+                }));
+            }
             font.label = font.family
                 ? `${font.family} ${font.size}`
                 : `${font.id} (${font.size}px)`;
@@ -339,11 +393,12 @@ const FontManager = (() => {
                                     ${Object.keys(GLYPH_PRESETS).map(k => `<option value="${k}">${k}</option>`).join('')}
                                 </select>
                             </div>
-                            <input type="text" id="font-new-glyphs" placeholder="e.g. 0x20-0x7E or leave empty for default" style="width:100%;font-size:12px;">
+                            <input type="text" id="font-new-glyphs" placeholder="e.g. ABC123 or \\U000F02D1,\\U000F05D4" style="width:100%;font-size:12px;">
                         </div>
                         <div style="margin-bottom:8px;">
-                            <label style="font-size:11px;color:var(--text-secondary);">MDI Extras (optional)</label>
-                            <input type="text" id="font-new-extras-glyphs" placeholder="e.g. \\U000F0001-\\U000F1AF0" style="width:100%;font-size:12px;">
+                            <label style="font-size:11px;color:var(--text-secondary);">MDI Extras (optional - for adding icons to a text font)</label>
+                            <input type="text" id="font-new-extras-file" placeholder="fonts/materialdesignicons-webfont.ttf or URL" style="width:100%;font-size:12px;margin-bottom:4px;">
+                            <input type="text" id="font-new-extras-glyphs" placeholder="\\U000F02D1,\\U000F05D4,\\U000F068A" style="width:100%;font-size:12px;">
                         </div>
                         <button id="btn-font-add" style="width:100%;font-size:12px;">+ Add Font</button>
                     </div>
@@ -420,10 +475,11 @@ const FontManager = (() => {
             if (glyphs) font.glyphs = glyphs;
 
             // Handle MDI extras
+            const extrasFile = modal.querySelector('#font-new-extras-file').value.trim();
             const extrasGlyphs = modal.querySelector('#font-new-extras-glyphs').value.trim();
-            if (extrasGlyphs) {
+            if (extrasFile && extrasGlyphs) {
                 font.extras = [{
-                    file: 'matdsgn2',
+                    file: extrasFile,
                     glyphs: extrasGlyphs,
                 }];
             }
@@ -441,6 +497,7 @@ const FontManager = (() => {
                 // Reset form
                 idInput.value = '';
                 glyphInput.value = '';
+                modal.querySelector('#font-new-extras-file').value = '';
                 modal.querySelector('#font-new-extras-glyphs').value = '';
                 autoId();
             } else {
