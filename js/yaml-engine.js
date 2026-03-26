@@ -275,8 +275,13 @@ const YAMLEngine = (() => {
                     const val = widget.properties[key];
                     if (val !== null && val !== undefined && val !== '' && val !== propDef.default) {
                         const part = propDef.stylePart || 'main';
-                        if (!inner[part]) inner[part] = {};
-                        inner[part][key] = formatStyleValue(key, val);
+                        if (part === 'main') {
+                            // Main part styles go directly on the widget
+                            inner[key] = formatStyleValue(key, val);
+                        } else {
+                            if (!inner[part]) inner[part] = {};
+                            inner[part][key] = formatStyleValue(key, val);
+                        }
                     }
                     continue;
                 }
@@ -303,21 +308,21 @@ const YAMLEngine = (() => {
         }
 
         // Styles for each part
+        // ESPHome format: 'main' part styles go directly on the widget,
+        // other parts (indicator, knob, scrollbar, etc.) are nested keys.
         if (widget.styles) {
             for (const [part, styles] of Object.entries(widget.styles)) {
-                const cleanStyles = {};
-                let hasStyles = false;
                 for (const [prop, val] of Object.entries(styles)) {
                     if (val !== null && val !== undefined && val !== '') {
-                        cleanStyles[prop] = formatStyleValue(prop, val);
-                        hasStyles = true;
-                    }
-                }
-                if (hasStyles) {
-                    if (!inner[part]) {
-                        inner[part] = cleanStyles;
-                    } else {
-                        Object.assign(inner[part], cleanStyles);
+                        const formatted = formatStyleValue(prop, val);
+                        if (part === 'main') {
+                            // Main part styles go directly on the widget
+                            inner[prop] = formatted;
+                        } else {
+                            // Other parts (indicator, knob, etc.) are nested
+                            if (!inner[part]) inner[part] = {};
+                            inner[part][prop] = formatted;
+                        }
                     }
                 }
             }
