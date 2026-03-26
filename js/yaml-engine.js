@@ -3,11 +3,12 @@
  * Handles YAML generation from designer state, parsing YAML back to state,
  * validation against ESPHome LVGL schema, and CodeMirror editor integration.
  *
- * Key fixes over original:
- * - !lambda tags properly preserved via post-processing
- * - Color values (0xRRGGBB) properly quoted
- * - Data fields with lambdas properly structured
- * - Full device YAML generation with sensor/binary_sensor blocks from entity bindings
+ * ESPHome YAML format requirements (per https://esphome.io/cookbook/lvgl/):
+ * - Colors are UNQUOTED hex integers: bg_color: 0xFFAA44
+ * - Opacity is UNQUOTED: bg_opa: 100%  or  bg_opa: COVER
+ * - Icon text uses \uXXXX in DOUBLE QUOTES: text: "\uF077"
+ * - !lambda tags: !lambda "return (int)x;"
+ * - y key must not be interpreted as YAML boolean
  */
 
 const YAMLEngine = (() => {
@@ -56,16 +57,17 @@ const YAMLEngine = (() => {
     // ---- Post-processing for ESPHome YAML ----
 
     /**
-     * Post-process YAML output to fix ESPHome-specific syntax:
-     * 1. Convert __LAMBDA__ sentinels to !lambda "code" tags
-     * 2. Ensure 0xRRGGBB color values are quoted strings
-     * 3. Fix any !secret/!include tag representations
+     * Post-process YAML output to match ESPHome's expected format.
+     * ESPHome's YAML loader differs from standard YAML 1.1 in several ways:
+     * - Colors are bare hex integers: bg_color: 0xFFAA44
+     * - Percentage values are unquoted: bg_opa: 100%
+     * - The 'y' key is NOT treated as boolean true
+     * - Icon text uses \uXXXX inside double quotes: text: "\uF077"
      */
     function postProcessYaml(yamlStr) {
         let result = yamlStr;
 
         // Fix lambda sentinels: convert "__LAMBDA__code" → !lambda "code"
-        // Handle both quoted and unquoted forms from js-yaml dump
         result = result.replace(/"__LAMBDA__((?:[^"\\]|\\.)*)"/g, (match, code) => {
             return '!lambda "' + code + '"';
         });
@@ -77,32 +79,38 @@ const YAMLEngine = (() => {
         });
 
         // Fix !secret and !include tag representations
-        // js-yaml construct stores these as "!secret value" strings
         for (const tag of ['secret', 'include', 'extend', 'remove']) {
             const pattern = new RegExp(`["']!${tag}\\s+([^"']+)["']`, 'g');
             result = result.replace(pattern, `!${tag} $1`);
-            // Also handle unquoted form
-            const unquotedPattern = new RegExp(`:\\s+!${tag}\\s+(.+)$`, 'gm');
-            // These are already correct, no change needed
         }
 
-        // Ensure 0xRRGGBB color values are always quoted strings, not bare hex literals
-        // js-yaml may dump them unquoted which YAML parsers interpret as integers
-        result = result.replace(/:\s+(0x[0-9A-Fa-f]{6})\s*$/gm, (match, hex) => {
-            return ': "' + hex + '"';
-        });
+        // UNQUOTE hex color values: "0xFFAA44" → 0xFFAA44
+        // ESPHome expects bare hex integers for colors, not quoted strings
+        result = result.replace(/:\s+"(0x[0-9A-Fa-f]{6})"\s*$/gm, ': $1');
+        result = result.replace(/:\s+'(0x[0-9A-Fa-f]{6})'\s*$/gm, ': $1');
 
-        // Ensure percentage values (like opacity "100%") are quoted
-        result = result.replace(/:\s+(\d+%)\s*$/gm, (match, pct) => {
-            return ': "' + pct + '"';
-        });
+        // UNQUOTE percentage values: "100%" → 100%
+        // ESPHome expects bare percentage values for opacity etc.
+        result = result.replace(/:\s+"(\d+%)"\s*$/gm, ': $1');
+        result = result.replace(/:\s+'(\d+%)'\s*$/gm, ': $1');
 
-        // Safety: if any \UXXXXXXXX text values got double-quoted, convert to
-        // single quotes. In YAML double quotes, \U is a unicode escape which
-        // converts to an actual character — ESPHome needs the literal \U text.
-        // js-yaml with forceQuotes:false should never do this, but guard against it.
-        result = result.replace(/: "((?:[^"\\]|\\[^U])*\\U[0-9A-Fa-f]{8}[^"]*)"/g, (match, content) => {
-            return ": '" + content.replace(/'/g, "''") + "'";
+        // UNQUOTE the 'y' key: "y": → y:
+        // js-yaml quotes 'y' because YAML 1.1 treats it as boolean true,
+        // but ESPHome's YAML loader handles 'y' as a key name correctly
+        result = result.replace(/^(\s*)"y":/gm, '$1y:');
+        result = result.replace(/^(\s*)'y':/gm, '$1y:');
+
+        // Fix icon text sentinels: convert __ICON_TEXT__\uXXXX to "\uXXXX"
+        // ESPHome requires icon escape sequences in double-quoted strings
+        // js-yaml may have added its own quotes around the sentinel
+        result = result.replace(/"__ICON_TEXT__([^"]*)"/g, (match, content) => {
+            return '"' + content + '"';
+        });
+        result = result.replace(/'__ICON_TEXT__([^']*)'/g, (match, content) => {
+            return '"' + content + '"';
+        });
+        result = result.replace(/:\s+__ICON_TEXT__(.+)$/gm, (match, content) => {
+            return ': "' + content.trim() + '"';
         });
 
         return result;
@@ -284,7 +292,12 @@ const YAMLEngine = (() => {
                         }
                         continue;
                     }
-                    inner[key] = val;
+                    // Format text values with icon codes
+                    if (key === 'text' && typeof val === 'string') {
+                        inner[key] = formatTextForYaml(val);
+                    } else {
+                        inner[key] = val;
+                    }
                 }
             }
         }
@@ -421,15 +434,61 @@ const YAMLEngine = (() => {
         return obj;
     }
 
+    // Sentinel prefix for icon text that needs special YAML quoting.
+    // postProcessYaml converts __ICON_TEXT__... to properly double-quoted "\uXXXX" format.
+    const ICON_SENTINEL = '__ICON_TEXT__';
+
+    /**
+     * Format a text value for YAML output.
+     * Handles ESPHome LVGL icon escape sequences:
+     *
+     * For BMP codepoints (U+0000-U+FFFF), ESPHome uses: "\uXXXX" (double-quoted)
+     * For codepoints > U+FFFF (MDI full set), ESPHome uses: "\U000FXXXX" (double-quoted, 8-digit)
+     *
+     * The built-in Montserrat fonts include FontAwesome at U+F000-U+F2FF.
+     * Custom MDI fonts use codepoints at U+F0001+ (Supplementary PUA).
+     *
+     * This function marks icon text with a sentinel so postProcessYaml
+     * wraps it in double quotes for ESPHome.
+     */
+    function formatTextForYaml(text) {
+        if (!text || typeof text !== 'string') return text;
+
+        // Check if text contains any icon escape sequences
+        const hasEscapes = /\\U[0-9A-Fa-f]{8}|\\u[0-9A-Fa-f]{4}/.test(text);
+        if (!hasEscapes) return text;
+
+        let result = text;
+
+        // Convert 8-digit \U to 4-digit \u WHERE POSSIBLE (BMP codepoints only)
+        result = result.replace(/\\U([0-9A-Fa-f]{8})/g, (match, hex) => {
+            const codePoint = parseInt(hex, 16);
+            if (codePoint <= 0xFFFF) {
+                // Fits in 4-digit \u format
+                return '\\u' + codePoint.toString(16).toUpperCase().padStart(4, '0');
+            }
+            // Codepoint > U+FFFF: keep 8-digit format for ESPHome
+            return '\\U' + hex.toUpperCase();
+        });
+
+        // Mark with sentinel so postProcessYaml wraps in double quotes
+        return ICON_SENTINEL + result;
+    }
+
     /**
      * Format a style value for YAML output.
      */
     function formatStyleValue(prop, val) {
-        // Color values: convert #RRGGBB to 0xRRGGBB for ESPHome
+        // Color values: convert #RRGGBB to integer for ESPHome
+        // ESPHome expects bare hex integers: bg_color: 0xFFAA44 (not quoted)
+        // We store as integer so js-yaml outputs it as a number, then
+        // postProcessYaml isn't needed for colors since js-yaml outputs
+        // numbers without quotes. We'll handle the 0x prefix in post-processing.
         if (prop.includes('color') && typeof val === 'string' && val.startsWith('#')) {
+            // Return as string "0xRRGGBB" — postProcessYaml will unquote it
             return '0x' + val.slice(1).toUpperCase();
         }
-        // Opacity values: convert 0-255 integers to percentage strings for ESPHome
+        // Opacity values: format as percentage for ESPHome
         if (prop === 'opa' || prop.endsWith('_opa')) {
             return formatOpacityValue(val);
         }
