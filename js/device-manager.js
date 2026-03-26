@@ -13,7 +13,7 @@
  */
 
 const DeviceManager = (() => {
-    let config = { dashboardUrl: '', deviceFile: '' };
+    let config = { dashboardUrl: '', deviceFile: '', useIngress: false };
     let deviceYaml = '';          // Raw YAML text from device
     let connectionListeners = [];
 
@@ -35,6 +35,8 @@ const DeviceManager = (() => {
     function setConfig(dashboardUrl, deviceFile) {
         config.dashboardUrl = (dashboardUrl || '').replace(/\/+$/, '');
         config.deviceFile = deviceFile || '';
+        // Auto-detect Ingress: if URL contains hassio_ingress, enable credentials
+        config.useIngress = /hassio_ingress|api\/hassio/.test(config.dashboardUrl);
         localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
     }
 
@@ -43,7 +45,24 @@ const DeviceManager = (() => {
             const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
             if (saved.dashboardUrl) config.dashboardUrl = saved.dashboardUrl;
             if (saved.deviceFile) config.deviceFile = saved.deviceFile;
+            if (saved.useIngress) config.useIngress = saved.useIngress;
+            // Re-detect ingress from URL
+            if (config.dashboardUrl && /hassio_ingress|api\/hassio/.test(config.dashboardUrl)) {
+                config.useIngress = true;
+            }
         } catch (e) { /* ignore */ }
+    }
+
+    /**
+     * Get fetch options for ESPHome API requests.
+     * When using HA Ingress, includes credentials so the HA session cookie is sent.
+     */
+    function getFetchOptions(extra = {}) {
+        const opts = { ...extra };
+        if (config.useIngress) {
+            opts.credentials = 'same-origin';
+        }
+        return opts;
     }
 
     // ---- ESPHome Dashboard API ----
@@ -59,21 +78,23 @@ const DeviceManager = (() => {
         const url = `${config.dashboardUrl}/edit?configuration=${encodeURIComponent(config.deviceFile)}`;
         let response;
         try {
-            response = await fetch(url, {
+            response = await fetch(url, getFetchOptions({
                 method: 'GET',
                 headers: { 'Accept': 'text/plain' },
-            });
+            }));
         } catch (e) {
-            // Fetch network errors are typically CORS or connectivity issues
+            const ingressHint = config.useIngress
+                ? `You're using HA Ingress. Make sure:\n` +
+                  `1. This designer is served from the same HA instance (e.g. /local/lvgl-designer/)\n` +
+                  `2. You're logged into Home Assistant in this browser\n` +
+                  `3. The Ingress URL is correct (check ESPHome add-on info page)\n`
+                : `The ESPHome dashboard at "${config.dashboardUrl}" must be accessible from this browser.\n\n` +
+                  `Solutions:\n` +
+                  `1. Copy designer files to HA's www/ folder and access via /local/lvgl-designer/\n` +
+                  `2. Set dashboard URL to the ESPHome Ingress URL from HA\n` +
+                  `3. Use "Export YAML" and paste into ESPHome dashboard manually\n`;
             throw new Error(
-                `Network error fetching device YAML. This is usually a CORS issue.\n\n` +
-                `The ESPHome dashboard at "${config.dashboardUrl}" must be accessible from this browser.\n\n` +
-                `Solutions:\n` +
-                `1. Serve this designer from the same host/port as ESPHome dashboard\n` +
-                `2. Use the ESPHome add-on's built-in Ingress proxy\n` +
-                `3. Add a reverse proxy (nginx/traefik) that serves both on the same origin\n` +
-                `4. Use "Export YAML" instead and paste into ESPHome dashboard manually\n\n` +
-                `Original error: ${e.message}`
+                `Network error fetching device YAML.\n\n${ingressHint}\nOriginal error: ${e.message}`
             );
         }
 
@@ -96,14 +117,14 @@ const DeviceManager = (() => {
         const url = `${config.dashboardUrl}/edit?configuration=${encodeURIComponent(config.deviceFile)}`;
         let response;
         try {
-            response = await fetch(url, {
+            response = await fetch(url, getFetchOptions({
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain' },
                 body: yamlContent,
-            });
+            }));
         } catch (e) {
             throw new Error(
-                `Network error uploading YAML. This is usually a CORS issue.\n\n` +
+                `Network error uploading YAML.\n\n` +
                 `Use "Export YAML" to download the file and paste into ESPHome dashboard manually.\n\n` +
                 `Original error: ${e.message}`
             );
