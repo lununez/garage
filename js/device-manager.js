@@ -57,10 +57,25 @@ const DeviceManager = (() => {
         }
 
         const url = `${config.dashboardUrl}/edit?configuration=${encodeURIComponent(config.deviceFile)}`;
-        const response = await fetch(url, {
-            method: 'GET',
-            headers: { 'Accept': 'text/plain' },
-        });
+        let response;
+        try {
+            response = await fetch(url, {
+                method: 'GET',
+                headers: { 'Accept': 'text/plain' },
+            });
+        } catch (e) {
+            // Fetch network errors are typically CORS or connectivity issues
+            throw new Error(
+                `Network error fetching device YAML. This is usually a CORS issue.\n\n` +
+                `The ESPHome dashboard at "${config.dashboardUrl}" must be accessible from this browser.\n\n` +
+                `Solutions:\n` +
+                `1. Serve this designer from the same host/port as ESPHome dashboard\n` +
+                `2. Use the ESPHome add-on's built-in Ingress proxy\n` +
+                `3. Add a reverse proxy (nginx/traefik) that serves both on the same origin\n` +
+                `4. Use "Export YAML" instead and paste into ESPHome dashboard manually\n\n` +
+                `Original error: ${e.message}`
+            );
+        }
 
         if (!response.ok) {
             throw new Error(`Failed to fetch device YAML: ${response.status} ${response.statusText}`);
@@ -79,11 +94,20 @@ const DeviceManager = (() => {
         }
 
         const url = `${config.dashboardUrl}/edit?configuration=${encodeURIComponent(config.deviceFile)}`;
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain' },
-            body: yamlContent,
-        });
+        let response;
+        try {
+            response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: yamlContent,
+            });
+        } catch (e) {
+            throw new Error(
+                `Network error uploading YAML. This is usually a CORS issue.\n\n` +
+                `Use "Export YAML" to download the file and paste into ESPHome dashboard manually.\n\n` +
+                `Original error: ${e.message}`
+            );
+        }
 
         if (!response.ok) {
             throw new Error(`Failed to upload YAML: ${response.status} ${response.statusText}`);

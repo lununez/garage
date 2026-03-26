@@ -389,7 +389,20 @@ const YAMLEngine = (() => {
             inner.widgets = widget.children.map(c => widgetToYAML(c));
         }
 
-        obj[widget.type] = inner;
+        // Map widget types for ESPHome compatibility
+        // ESPHome's canvas widget requires explicit draw commands (lvgl.canvas.fill, etc.)
+        // If a canvas has no draw actions, it should be output as 'obj' (base container)
+        let yamlType = widget.type;
+        if (yamlType === 'canvas') {
+            const hasDrawActions = widget.events && Object.values(widget.events).some(actions =>
+                actions.some(a => a.type && a.type.startsWith('lvgl.canvas.'))
+            );
+            if (!hasDrawActions) {
+                yamlType = 'obj';
+            }
+        }
+
+        obj[yamlType] = inner;
         return obj;
     }
 
@@ -624,14 +637,39 @@ const YAMLEngine = (() => {
         }
 
         // Parse styles for each part
+        // ESPHome format: main part styles are directly on the widget,
+        // other parts (indicator, knob, etc.) are nested keys.
+        const knownWidgetKeys = new Set([
+            'id', 'x', 'y', 'width', 'height', 'align', 'widgets',
+            'layout', 'flex_flow', 'flex_align_main', 'flex_align_cross', 'flex_align_track',
+            ...Object.keys(def.properties),
+            ...Object.keys(LVGLWidgets.EVENTS || {}),
+        ]);
+        // Also exclude non-main part names from main style detection
+        const partNames = new Set(def.parts || ['main']);
+
         for (const part of (def.parts || ['main'])) {
-            if (props[part] && typeof props[part] === 'object') {
-                widget.styles[part] = {};
+            widget.styles[part] = {};
+            if (part === 'main') {
+                // Main part styles come directly from widget root properties
+                // (any key that's a known style prop and not a widget/event/part key)
+                for (const [prop, val] of Object.entries(props)) {
+                    if (knownWidgetKeys.has(prop)) continue;
+                    if (partNames.has(prop) && typeof val === 'object') continue;
+                    if (LVGLWidgets.STYLE_PROPS && LVGLWidgets.STYLE_PROPS[prop]) {
+                        widget.styles.main[prop] = parseStyleValue(prop, val);
+                    }
+                }
+                // Also support legacy 'main:' key for backward compatibility
+                if (props.main && typeof props.main === 'object') {
+                    for (const [prop, val] of Object.entries(props.main)) {
+                        widget.styles.main[prop] = parseStyleValue(prop, val);
+                    }
+                }
+            } else if (props[part] && typeof props[part] === 'object') {
                 for (const [prop, val] of Object.entries(props[part])) {
                     widget.styles[part][prop] = parseStyleValue(prop, val);
                 }
-            } else {
-                widget.styles[part] = {};
             }
         }
 
@@ -877,7 +915,9 @@ const YAMLEngine = (() => {
                 }
             }
 
+            // Validate style properties on non-main parts (indicator, knob, etc.)
             for (const part of (def.parts || [])) {
+                if (part === 'main') continue; // main styles are on the widget root
                 if (props[part] && typeof props[part] === 'object') {
                     for (const [styleProp] of Object.entries(props[part])) {
                         if (!LVGLWidgets.STYLE_PROPS[styleProp]) {
@@ -885,6 +925,15 @@ const YAMLEngine = (() => {
                         }
                     }
                 }
+            }
+
+            // Warn about canvas widgets without draw actions
+            if (type === 'canvas') {
+                results.push({
+                    type: 'warning',
+                    message: `${wPath}: Canvas widget requires explicit draw actions (lvgl.canvas.fill, etc.). ` +
+                        `For a simple colored panel, use "obj" instead. The designer will auto-convert canvas to obj in output.`
+                });
             }
 
             if (props.widgets && !def.canContain) {
