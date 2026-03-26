@@ -232,7 +232,7 @@ const Designer = (() => {
         notifyChange();
     }
 
-    function updateWidgetStyle(widgetId, part, prop, value) {
+    function updateWidgetStyle(widgetId, part, prop, value, lvglState) {
         const page = getCurrentPage();
         const widget = findWidgetById(widgetId, page.widgets);
         if (!widget) return;
@@ -240,10 +240,31 @@ const Designer = (() => {
         pushUndo();
         if (!widget.styles) widget.styles = {};
         if (!widget.styles[part]) widget.styles[part] = {};
-        if (value === null || value === '' || value === undefined) {
-            delete widget.styles[part][prop];
+
+        if (lvglState && lvglState !== 'DEFAULT') {
+            // State-specific style: stored under _states.<state>.<prop>
+            const stateKey = lvglState.toLowerCase();
+            if (!widget.styles[part]._states) widget.styles[part]._states = {};
+            if (!widget.styles[part]._states[stateKey]) widget.styles[part]._states[stateKey] = {};
+            if (value === null || value === '' || value === undefined) {
+                delete widget.styles[part]._states[stateKey][prop];
+                // Clean up empty state objects
+                if (Object.keys(widget.styles[part]._states[stateKey]).length === 0) {
+                    delete widget.styles[part]._states[stateKey];
+                }
+                if (Object.keys(widget.styles[part]._states).length === 0) {
+                    delete widget.styles[part]._states;
+                }
+            } else {
+                widget.styles[part]._states[stateKey][prop] = value;
+            }
         } else {
-            widget.styles[part][prop] = value;
+            // Default state: stored directly on the part
+            if (value === null || value === '' || value === undefined) {
+                delete widget.styles[part][prop];
+            } else {
+                widget.styles[part][prop] = value;
+            }
         }
         renderAll();
         notifyChange();
@@ -654,6 +675,7 @@ const Designer = (() => {
 
         // Style sections for each part
         if (def && def.parts) {
+            const states = LVGLWidgets.STATE_STYLES || ['DEFAULT'];
             for (const part of def.parts) {
                 const partStyles = widget.styles?.[part] || {};
                 const partLabel = part.charAt(0).toUpperCase() + part.slice(1);
@@ -662,14 +684,41 @@ const Designer = (() => {
                 html += `<div class="prop-section">`;
                 html += `<div class="prop-section-header${part === 'main' ? ' expanded' : ''}">${partLabel} Style</div>`;
                 html += `<div class="prop-section-body">`;
+
+                // State selector tabs
+                if (states.length > 1) {
+                    const selectedState = state._selectedStyleState?.[part] || 'DEFAULT';
+                    html += `<div class="lvgl-state-tabs" style="display:flex;gap:2px;margin-bottom:8px;flex-wrap:wrap;">`;
+                    for (const st of states) {
+                        const stKey = st.toLowerCase();
+                        const hasStyles = st === 'DEFAULT'
+                            ? Object.keys(partStyles).some(k => k !== '_states')
+                            : partStyles._states?.[stKey] && Object.keys(partStyles._states[stKey]).length > 0;
+                        const isActive = st === selectedState;
+                        html += `<button class="lvgl-state-tab${isActive ? ' active' : ''}${hasStyles ? ' has-styles' : ''}" `
+                            + `data-state-part="${part}" data-state-name="${st}" `
+                            + `style="font-size:10px;padding:2px 6px;border:1px solid var(--border-color);border-radius:3px;`
+                            + `background:${isActive ? 'var(--accent-color)' : 'var(--bg-surface)'};`
+                            + `color:${isActive ? '#fff' : 'var(--text-primary)'};cursor:pointer;`
+                            + `${hasStyles && !isActive ? 'border-color:var(--accent-color);' : ''}">`
+                            + `${st}</button>`;
+                    }
+                    html += `</div>`;
+                }
+
+                const currentState = state._selectedStyleState?.[part] || 'DEFAULT';
+                const currentStyles = currentState === 'DEFAULT'
+                    ? partStyles
+                    : (partStyles._states?.[currentState.toLowerCase()] || {});
+
                 const baseProps = ['bg_color', 'bg_opa', 'radius', 'border_color', 'border_width',
                                     'text_color', 'text_font', 'text_opa', 'text_letter_space',
                                     'opa', 'pad_all'];
                 for (const prop of baseProps) {
                     const propDef = LVGLWidgets.STYLE_PROPS[prop];
                     if (!propDef) continue;
-                    const val = partStyles[prop] ?? '';
-                    html += propRow(propDef.label, renderStyleInput(part, prop, propDef, val));
+                    const val = currentStyles[prop] ?? '';
+                    html += propRow(propDef.label, renderStyleInput(part, prop, propDef, val, currentState));
                 }
                 html += `</div></div>`;
 
@@ -682,8 +731,8 @@ const Designer = (() => {
                     for (const prop of gradProps) {
                         const propDef = LVGLWidgets.STYLE_PROPS[prop];
                         if (!propDef) continue;
-                        const val = partStyles[prop] ?? '';
-                        html += propRow(propDef.label, renderStyleInput(part, prop, propDef, val));
+                        const val = currentStyles[prop] ?? '';
+                        html += propRow(propDef.label, renderStyleInput(part, prop, propDef, val, currentState));
                     }
                     html += `</div></div>`;
                 }
@@ -709,8 +758,8 @@ const Designer = (() => {
                 for (const prop of shadowProps) {
                     const propDef = LVGLWidgets.STYLE_PROPS[prop];
                     if (!propDef) continue;
-                    const val = partStyles[prop] ?? '';
-                    html += propRow(propDef.label, renderStyleInput(part, prop, propDef, val));
+                    const val = currentStyles[prop] ?? '';
+                    html += propRow(propDef.label, renderStyleInput(part, prop, propDef, val, currentState));
                 }
                 html += `</div></div>`;
             }
@@ -827,8 +876,9 @@ const Designer = (() => {
         }
     }
 
-    function renderStyleInput(part, prop, propDef, value) {
-        const dataAttr = `data-style-part="${part}" data-style-prop="${prop}"`;
+    function renderStyleInput(part, prop, propDef, value, lvglState) {
+        const stateAttr = lvglState ? ` data-style-state="${lvglState}"` : '';
+        const dataAttr = `data-style-part="${part}" data-style-prop="${prop}"${stateAttr}`;
 
         // Special rendering for text_font — show font dropdown
         if (prop === 'text_font') {
@@ -938,6 +988,7 @@ const Designer = (() => {
             const handler = (e) => {
                 const part = e.target.dataset.stylePart;
                 const prop = e.target.dataset.styleProp;
+                const lvglState = e.target.dataset.styleState || 'DEFAULT';
                 let val;
                 if (e.target.type === 'checkbox') {
                     val = e.target.checked;
@@ -946,9 +997,20 @@ const Designer = (() => {
                 } else {
                     val = e.target.value || null;
                 }
-                updateWidgetStyle(state.selectedWidgetId, part, prop, val);
+                updateWidgetStyle(state.selectedWidgetId, part, prop, val, lvglState);
             };
             input.addEventListener('change', handler);
+        });
+
+        // State tab buttons
+        propertiesPanel.querySelectorAll('.lvgl-state-tab').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const part = e.target.dataset.statePart;
+                const stateName = e.target.dataset.stateName;
+                if (!state._selectedStyleState) state._selectedStyleState = {};
+                state._selectedStyleState[part] = stateName;
+                renderProperties();
+            });
         });
 
         // Font manage buttons

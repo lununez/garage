@@ -146,9 +146,26 @@ const FontManager = (() => {
                 const familyName = f.id;
                 if (!loadedCustomFonts.has(familyName)) {
                     loadedCustomFonts.add(familyName);
-                    const style = document.createElement('style');
-                    style.textContent = `@font-face { font-family: '${familyName}'; src: url('${f.file}'); }`;
-                    document.head.appendChild(style);
+                    // Fetch as blob to bypass CORS issues with direct URL references in @font-face
+                    fetch(f.file)
+                        .then(r => r.blob())
+                        .then(blob => {
+                            const blobUrl = URL.createObjectURL(blob);
+                            const ext = f.file.split('.').pop().toLowerCase();
+                            const format = ext === 'otf' ? 'opentype' : 'truetype';
+                            const style = document.createElement('style');
+                            style.textContent = `@font-face { font-family: '${familyName}'; src: url('${blobUrl}') format('${format}'); }`;
+                            document.head.appendChild(style);
+                            console.log(`Loaded remote font: ${familyName} from ${f.file}`);
+                        })
+                        .catch(err => {
+                            console.warn(`Failed to load remote font ${familyName}: ${err.message}. Trying direct URL.`);
+                            const ext = f.file.split('.').pop().toLowerCase();
+                            const format = ext === 'otf' ? 'opentype' : 'truetype';
+                            const style = document.createElement('style');
+                            style.textContent = `@font-face { font-family: '${familyName}'; src: url('${f.file}') format('${format}'); }`;
+                            document.head.appendChild(style);
+                        });
                 }
                 f.family = familyName;
             }
@@ -269,7 +286,8 @@ const FontManager = (() => {
                                 <label style="font-size:11px;color:var(--text-secondary);">Font Source</label>
                                 <select id="font-source" style="width:100%;font-size:12px;">
                                     <option value="google">Google Font</option>
-                                    <option value="file">Local File</option>
+                                    <option value="url">Remote URL (TTF/OTF)</option>
+                                    <option value="file">Local File Path</option>
                                 </select>
                             </div>
                             <div id="font-family-group">
@@ -277,6 +295,10 @@ const FontManager = (() => {
                                 <select id="font-family-select" style="width:100%;font-size:12px;">
                                     ${GOOGLE_FONTS.map(f => `<option value="${f}">${f}</option>`).join('')}
                                 </select>
+                            </div>
+                            <div id="font-url-group" style="display:none;">
+                                <label style="font-size:11px;color:var(--text-secondary);">Font URL</label>
+                                <input type="text" id="font-url-path" placeholder="https://example.com/font.ttf" style="width:100%;font-size:12px;">
                             </div>
                             <div id="font-file-group" style="display:none;">
                                 <label style="font-size:11px;color:var(--text-secondary);">File Path</label>
@@ -328,9 +350,10 @@ const FontManager = (() => {
         // Source toggle
         const sourceSelect = modal.querySelector('#font-source');
         sourceSelect.addEventListener('change', () => {
-            const isFile = sourceSelect.value === 'file';
-            modal.querySelector('#font-family-group').style.display = isFile ? 'none' : '';
-            modal.querySelector('#font-file-group').style.display = isFile ? '' : 'none';
+            const val = sourceSelect.value;
+            modal.querySelector('#font-family-group').style.display = val === 'google' ? '' : 'none';
+            modal.querySelector('#font-url-group').style.display = val === 'url' ? '' : 'none';
+            modal.querySelector('#font-file-group').style.display = val === 'file' ? '' : 'none';
         });
 
         // Auto-generate ID from family + size
@@ -341,10 +364,18 @@ const FontManager = (() => {
             if (sourceSelect.value === 'google') {
                 const family = familySelect.value.toLowerCase().replace(/\s+/g, '_');
                 idInput.value = `${family}_${sizeInput.value}`;
+            } else if (sourceSelect.value === 'url') {
+                const urlInput = modal.querySelector('#font-url-path');
+                if (urlInput && urlInput.value) {
+                    const filename = urlInput.value.split('/').pop().replace(/\.[^.]+$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '_');
+                    idInput.value = `${filename}_${sizeInput.value}`;
+                }
             }
         }
         familySelect.addEventListener('change', autoId);
         sizeInput.addEventListener('input', autoId);
+        const urlInput = modal.querySelector('#font-url-path');
+        if (urlInput) urlInput.addEventListener('input', autoId);
         autoId();
 
         // Glyph preset
@@ -364,6 +395,13 @@ const FontManager = (() => {
             };
             if (source === 'google') {
                 font.family = familySelect.value;
+            } else if (source === 'url') {
+                let url = modal.querySelector('#font-url-path').value.trim();
+                // Convert GitHub blob URLs to raw URLs
+                if (url.includes('github.com') && url.includes('/blob/')) {
+                    url = url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/');
+                }
+                font.file = url;
             } else {
                 font.file = modal.querySelector('#font-file-path').value.trim();
             }

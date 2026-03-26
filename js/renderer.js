@@ -864,6 +864,8 @@ const LVGLRenderer = (() => {
                     const btnEl = document.createElement('div');
                     btnEl.className = 'lvgl-btnmatrix-btn';
                     btnEl.textContent = btn;
+                    // Apply items part styles (bg_color, radius, etc.)
+                    applyStyles(btnEl, widget.styles?.items);
                     el.appendChild(btnEl);
                 }
             }

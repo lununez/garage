@@ -310,18 +310,39 @@ const YAMLEngine = (() => {
         // Styles for each part
         // ESPHome format: 'main' part styles go directly on the widget,
         // other parts (indicator, knob, scrollbar, etc.) are nested keys.
+        // State-specific styles are nested under the state name (e.g. pressed:, checked:)
         if (widget.styles) {
             for (const [part, styles] of Object.entries(widget.styles)) {
                 for (const [prop, val] of Object.entries(styles)) {
+                    if (prop === '_states') continue; // Handle states separately below
                     if (val !== null && val !== undefined && val !== '') {
                         const formatted = formatStyleValue(prop, val);
                         if (part === 'main') {
-                            // Main part styles go directly on the widget
                             inner[prop] = formatted;
                         } else {
-                            // Other parts (indicator, knob, etc.) are nested
                             if (!inner[part]) inner[part] = {};
                             inner[part][prop] = formatted;
+                        }
+                    }
+                }
+                // State-specific styles (pressed, checked, focused, disabled)
+                if (styles._states) {
+                    for (const [stateName, stateStyles] of Object.entries(styles._states)) {
+                        const stateObj = {};
+                        for (const [prop, val] of Object.entries(stateStyles)) {
+                            if (val !== null && val !== undefined && val !== '') {
+                                stateObj[prop] = formatStyleValue(prop, val);
+                            }
+                        }
+                        if (Object.keys(stateObj).length > 0) {
+                            if (part === 'main') {
+                                // Main part states go directly on the widget: pressed: { ... }
+                                inner[stateName] = stateObj;
+                            } else {
+                                // Sub-part states nest inside the part: indicator: { pressed: { ... } }
+                                if (!inner[part]) inner[part] = {};
+                                inner[part][stateName] = stateObj;
+                            }
                         }
                     }
                 }
@@ -610,6 +631,8 @@ const YAMLEngine = (() => {
         // Also exclude non-main part names from main style detection
         const partNames = new Set(def.parts || ['main']);
 
+        const lvglStates = new Set(['pressed', 'focused', 'disabled', 'checked', 'default']);
+
         for (const part of (def.parts || ['main'])) {
             widget.styles[part] = {};
             if (part === 'main') {
@@ -618,6 +641,15 @@ const YAMLEngine = (() => {
                 for (const [prop, val] of Object.entries(props)) {
                     if (knownWidgetKeys.has(prop)) continue;
                     if (partNames.has(prop) && typeof val === 'object') continue;
+                    // Check if this is a state key (pressed:, checked:, etc.) at widget root → main part state
+                    if (lvglStates.has(prop) && typeof val === 'object') {
+                        if (!widget.styles.main._states) widget.styles.main._states = {};
+                        widget.styles.main._states[prop] = {};
+                        for (const [sp, sv] of Object.entries(val)) {
+                            widget.styles.main._states[prop][sp] = parseStyleValue(sp, sv);
+                        }
+                        continue;
+                    }
                     if (LVGLWidgets.STYLE_PROPS && LVGLWidgets.STYLE_PROPS[prop]) {
                         widget.styles.main[prop] = parseStyleValue(prop, val);
                     }
@@ -630,6 +662,15 @@ const YAMLEngine = (() => {
                 }
             } else if (props[part] && typeof props[part] === 'object') {
                 for (const [prop, val] of Object.entries(props[part])) {
+                    // Check if this is a state key inside a sub-part
+                    if (lvglStates.has(prop) && typeof val === 'object') {
+                        if (!widget.styles[part]._states) widget.styles[part]._states = {};
+                        widget.styles[part]._states[prop] = {};
+                        for (const [sp, sv] of Object.entries(val)) {
+                            widget.styles[part]._states[prop][sp] = parseStyleValue(sp, sv);
+                        }
+                        continue;
+                    }
                     widget.styles[part][prop] = parseStyleValue(prop, val);
                 }
             }
@@ -862,10 +903,12 @@ const YAMLEngine = (() => {
             }
 
             // Validate style properties on non-main parts (indicator, knob, etc.)
+            const validStates = new Set(['pressed', 'focused', 'disabled', 'checked', 'default']);
             for (const part of (def.parts || [])) {
                 if (part === 'main') continue; // main styles are on the widget root
                 if (props[part] && typeof props[part] === 'object') {
                     for (const [styleProp] of Object.entries(props[part])) {
+                        if (validStates.has(styleProp)) continue; // state keys are valid
                         if (!LVGLWidgets.STYLE_PROPS[styleProp]) {
                             results.push({ type: 'info', message: `${wPath}.${part}: Unknown style property "${styleProp}"` });
                         }
