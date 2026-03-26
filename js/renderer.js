@@ -27,7 +27,8 @@ const LVGLRenderer = (() => {
 
     /**
      * Parse an opacity value to a CSS-compatible number (0-1).
-     * Supports: 0-255 int, 0-100%, TRANSP, COVER, percentage strings
+     * Supports: 0-100 (percentage), 0%-100%, TRANSP, COVER
+     * Plain numbers are treated as percentages (matching the UI input).
      */
     function parseOpacity(val) {
         if (val == null || val === '') return null;
@@ -36,10 +37,14 @@ const LVGLRenderer = (() => {
             if (lower === 'transp') return 0;
             if (lower === 'cover') return 1;
             if (lower.endsWith('%')) return parseFloat(lower) / 100;
-            return parseFloat(lower) / 255;
+            // Plain number string: treat as 0-100 percentage
+            const num = parseFloat(lower);
+            if (!isNaN(num)) return Math.min(num, 100) / 100;
+            return null;
         }
         if (typeof val === 'number') {
-            if (val > 1 && val <= 255) return val / 255;
+            // Numbers > 1 are percentages (0-100), not 0-255
+            if (val > 1 && val <= 100) return val / 100;
             return val;
         }
         return null;

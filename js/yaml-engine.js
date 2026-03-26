@@ -97,6 +97,14 @@ const YAMLEngine = (() => {
             return ': "' + pct + '"';
         });
 
+        // Safety: if any \UXXXXXXXX text values got double-quoted, convert to
+        // single quotes. In YAML double quotes, \U is a unicode escape which
+        // converts to an actual character — ESPHome needs the literal \U text.
+        // js-yaml with forceQuotes:false should never do this, but guard against it.
+        result = result.replace(/: "((?:[^"\\]|\\[^U])*\\U[0-9A-Fa-f]{8}[^"]*)"/g, (match, content) => {
+            return ": '" + content.replace(/'/g, "''") + "'";
+        });
+
         return result;
     }
 
@@ -431,7 +439,8 @@ const YAMLEngine = (() => {
     /**
      * Format opacity value for ESPHome YAML.
      * ESPHome expects percentage strings ("100%", "50%") or named constants (TRANSP, COVER).
-     * The designer may store values as 0-255 integers.
+     * The UI accepts 0-100 (percentage), 0%-100%, or TRANSP/COVER.
+     * Plain numbers are treated as percentages (not 0-255 LVGL internal values).
      */
     function formatOpacityValue(val) {
         if (val === null || val === undefined || val === '') return val;
@@ -444,22 +453,12 @@ const YAMLEngine = (() => {
         if (strVal.endsWith('%')) {
             return strVal;
         }
-        // Numeric value: convert 0-255 range to 0-100% for ESPHome
+        // Numeric value: treat as percentage (0-100 range)
         const num = parseFloat(strVal);
         if (!isNaN(num)) {
-            if (num > 1 && num <= 255) {
-                // 0-255 range → percentage
-                const pct = Math.round((num / 255) * 100);
-                return pct + '%';
-            } else if (num >= 0 && num <= 1) {
-                // 0-1 float → percentage
-                return Math.round(num * 100) + '%';
-            } else if (num === 0) {
-                return '0%';
-            }
-            // Already looks like a percentage value without the sign (e.g. user typed "50")
-            // Treat values in 0-100 range as percentage if they were entered as plain numbers
-            return Math.round(num) + '%';
+            // Clamp to 0-100 range
+            const clamped = Math.max(0, Math.min(100, Math.round(num)));
+            return clamped + '%';
         }
         return val;
     }
