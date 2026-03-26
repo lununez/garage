@@ -35,9 +35,9 @@ global.LVGLWidgets = {
                     min_value: { type: 'number', default: 0 },
                     max_value: { type: 'number', default: 100 },
                     value: { type: 'number', default: 50 },
-                    knob_style: { type: 'enum', default: 'circle', yamlExclude: true },
-                    knob_width: { type: 'number', default: null, yamlExclude: true },
-                    knob_height: { type: 'number', default: null, yamlExclude: true },
+                    adjustable: { type: 'boolean', default: true, yamlMap: 'disabled', yamlInvert: true },
+                    animated: { type: 'boolean', default: false },
+                    mode: { type: 'enum', default: '' },
                 },
                 parts: ['main', 'indicator', 'knob']
             },
@@ -56,7 +56,7 @@ global.LVGLWidgets = {
         };
         return defs[type] || null;
     },
-    EVENTS: { on_press: {}, on_release: {}, on_click: {} },
+    EVENTS: { on_press: {}, on_release: {}, on_click: {}, on_value: {} },
     STYLE_PROPS: STYLE_PROPS,
 };
 global.EntityBinding = { generateConditionalActions: () => null };
@@ -79,12 +79,12 @@ const state = {
                     events: {}, children: [],
                 },
                 {
-                    id: 'shade_slider', type: 'slider', x: 41, y: 41, width: 89, height: 240,
-                    properties: { knob_style: 'bar', knob_width: 95, knob_height: 4 },
+                    id: 'shade_slider', type: 'slider', x: 41, y: 41, width: 88, height: 238,
+                    properties: {},
                     styles: {
-                        main: { bg_color: '#ffaa44', radius: 7 },
-                        indicator: { bg_color: '#ffeecc', shadow_width: 50, shadow_color: '#f5870a' },
-                        knob: { shadow_color: '#ff9900' },
+                        main: { bg_color: '#ffaa44', bg_opa: 'COVER', radius: 7 },
+                        indicator: { bg_color: '#ffeecc', bg_opa: 'COVER', radius: 7 },
+                        knob: { bg_color: '#ffffff', bg_opa: 'COVER', radius: 7, pad_top: -41, pad_bottom: -42, pad_left: 0, pad_right: 0 },
                     },
                     events: {}, children: [],
                 },

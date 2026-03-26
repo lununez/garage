@@ -120,21 +120,39 @@ const FontManager = (() => {
      * Load Google Fonts used by project fonts into the browser for canvas preview.
      */
     const loadedFamilies = new Set();
+    const loadedCustomFonts = new Set();
     function loadGoogleFontsForPreview() {
         const families = projectFonts
             .filter(f => f.family && !loadedFamilies.has(f.family))
             .map(f => f.family);
-        if (families.length === 0) return;
+
         for (const family of families) {
             loadedFamilies.add(family);
         }
-        const url = 'https://fonts.googleapis.com/css2?'
-            + families.map(f => `family=${encodeURIComponent(f)}:wght@400;700`).join('&')
-            + '&display=swap';
-        const link = document.createElement('link');
-        link.rel = 'stylesheet';
-        link.href = url;
-        document.head.appendChild(link);
+
+        if (families.length > 0) {
+            const url = 'https://fonts.googleapis.com/css2?'
+                + families.map(f => `family=${encodeURIComponent(f)}:wght@400;700`).join('&')
+                + '&display=swap';
+            const link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = url;
+            document.head.appendChild(link);
+        }
+
+        // Load remote TTF/OTF files from URLs (e.g. GitHub-hosted MDI fonts)
+        projectFonts.forEach(f => {
+            if (f.file && f.file.startsWith('http')) {
+                const familyName = f.id;
+                if (!loadedCustomFonts.has(familyName)) {
+                    loadedCustomFonts.add(familyName);
+                    const style = document.createElement('style');
+                    style.textContent = `@font-face { font-family: '${familyName}'; src: url('${f.file}'); }`;
+                    document.head.appendChild(style);
+                }
+                f.family = familyName;
+            }
+        });
     }
 
     /**
@@ -151,6 +169,9 @@ const FontManager = (() => {
         const css = { fontSize: font.size + 'px' };
         if (font.family) {
             css.fontFamily = `'${font.family}', sans-serif`;
+        } else if (font.file && font.file.startsWith('http') && loadedCustomFonts.has(font.id)) {
+            // Remote font loaded via @font-face with the font ID as family name
+            css.fontFamily = `'${font.id}', sans-serif`;
         }
         return css;
     }
@@ -170,10 +191,9 @@ const FontManager = (() => {
             obj.id = f.id;
             obj.size = f.size;
             if (f.bpp) obj.bpp = f.bpp;
-            // Only emit glyphs if it's a safe ASCII hex range (e.g. "0x20-0x7E")
-            // Skip unicode escape ranges like "\U000F..." which cause ESPHome parse errors
-            // Those belong in extras, not the top-level glyphs key
-            if (f.glyphs && !f.glyphs.includes('\\U') && !f.glyphs.includes('\U')) {
+            // Pass through glyphs as-is, including \U escape ranges for custom MDI fonts.
+            // ESPHome expects arrays for \U glyphs (e.g. ["\U000F0360", "\U000F035D"]).
+            if (f.glyphs) {
                 obj.glyphs = f.glyphs;
             }
             if (f.extras && f.extras.length > 0) {

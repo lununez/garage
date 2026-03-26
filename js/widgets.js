@@ -8,6 +8,8 @@ const LVGLWidgets = (() => {
 
     // ---- Common Style Properties ----
     const STYLE_PROPS = {
+        width:       { type: 'number', default: null, label: 'Width' },
+        height:      { type: 'number', default: null, label: 'Height' },
         bg_color:    { type: 'color', default: null, label: 'Background Color' },
         bg_opa:      { type: 'opacity', default: null, label: 'Background Opacity' },
         bg_grad_color: { type: 'color', default: null, label: 'Gradient Color' },
@@ -235,11 +237,6 @@ const LVGLWidgets = (() => {
                 adjustable: { type: 'boolean', default: true, label: 'Adjustable', yamlMap: 'disabled', yamlInvert: true },
                 animated:  { type: 'boolean', default: false, label: 'Animated' },
                 mode:      { type: 'enum', default: '', label: 'Mode', options: ['', 'NORMAL', 'SYMMETRICAL', 'RANGE'] },
-                knob_style: { type: 'enum', default: 'circle', label: 'Knob Style',
-                             options: ['circle', 'bar', 'none', 'image'], yamlExclude: true },
-                knob_image: { type: 'string', default: '', label: 'Knob Image (URL)', yamlExclude: true },
-                knob_width: { type: 'number', default: null, label: 'Knob Width', yamlExclude: true },
-                knob_height: { type: 'number', default: null, label: 'Knob Height', yamlExclude: true },
             },
             parts: ['main', 'indicator', 'knob'],
         },

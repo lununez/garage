@@ -225,47 +225,31 @@ const LVGLRenderer = (() => {
      * and render text with MDI icon support.
      */
     function renderLabelText(el, text) {
-        // Match ESPHome unicode escape sequences: \U000FXXXX (8-digit hex, MDI range)
-        // and also shorter forms like \uXXXX
+        // Match ESPHome unicode escape sequences: \U000FXXXX (8-digit) and \uXXXX (4-digit)
         const unicodePattern = /\\U([0-9A-Fa-f]{8})|\\u([0-9A-Fa-f]{4})/g;
-        const hasMdiCodes = unicodePattern.test(text);
-
-        if (!hasMdiCodes) {
+        if (!unicodePattern.test(text)) {
             el.textContent = text;
             return;
         }
 
-        // Reset lastIndex after test()
         unicodePattern.lastIndex = 0;
-
-        // Split text into segments of plain text and unicode icons
         let lastIdx = 0;
         let match;
         while ((match = unicodePattern.exec(text)) !== null) {
-            // Add plain text before this match
             if (match.index > lastIdx) {
                 el.appendChild(document.createTextNode(text.substring(lastIdx, match.index)));
             }
 
             const codeHex = match[1] || match[2];
             const codePoint = parseInt(codeHex, 16);
-            const char = String.fromCodePoint(codePoint);
 
-            // MDI icons are in the range U+F0001 - U+F1AF0 (Private Use Area)
-            const isMdi = codePoint >= 0xF0000 && codePoint <= 0xF2000;
-            if (isMdi) {
-                const iconSpan = document.createElement('span');
-                iconSpan.className = 'mdi-icon';
-                iconSpan.textContent = char;
-                el.appendChild(iconSpan);
-            } else {
-                el.appendChild(document.createTextNode(char));
-            }
+            // Decode the character natively.
+            // The widget's font-family (assigned via applyStyles) will handle drawing it.
+            el.appendChild(document.createTextNode(String.fromCodePoint(codePoint)));
 
             lastIdx = match.index + match[0].length;
         }
 
-        // Add remaining plain text
         if (lastIdx < text.length) {
             el.appendChild(document.createTextNode(text.substring(lastIdx)));
         }
@@ -373,66 +357,68 @@ const LVGLRenderer = (() => {
             }
             track.appendChild(indicator);
 
-            // Knob
-            const knobStyle = widget.properties.knob_style || 'circle';
-            if (knobStyle !== 'none') {
-                const knob = document.createElement('div');
-                knob.className = 'lvgl-slider-knob';
-                knob.style.position = 'absolute';
-                knob.style.zIndex = '2';
+            // Knob - rendered natively from part styles
+            const knob = document.createElement('div');
+            knob.className = 'lvgl-slider-knob';
+            knob.style.position = 'absolute';
+            knob.style.zIndex = '2';
 
-                if (knobStyle === 'bar') {
-                    knob.classList.add('knob-bar');
-                    const kw = widget.properties.knob_width || (vertical ? widget.width + 6 : 4);
-                    const kh = widget.properties.knob_height || (vertical ? 4 : widget.height + 6);
-                    knob.style.width = (typeof kw === 'number' ? kw + 'px' : kw);
-                    knob.style.height = (typeof kh === 'number' ? kh + 'px' : kh);
-                    knob.style.borderRadius = '2px';
-                    knob.style.background = '#fff';
-                    knob.style.boxShadow = '0 1px 4px rgba(0,0,0,0.4)';
-                } else if (knobStyle === 'image') {
-                    knob.classList.add('knob-image');
-                    if (widget.properties.knob_image) {
-                        knob.style.backgroundImage = `url(${widget.properties.knob_image})`;
-                    }
-                    const kw = widget.properties.knob_width || 24;
-                    const kh = widget.properties.knob_height || 24;
-                    knob.style.width = (typeof kw === 'number' ? kw + 'px' : kw);
-                    knob.style.height = (typeof kh === 'number' ? kh + 'px' : kh);
-                    knob.style.backgroundSize = 'contain';
-                    knob.style.backgroundRepeat = 'no-repeat';
-                    knob.style.backgroundPosition = 'center';
-                } else {
-                    // circle (default)
-                    const kSize = widget.properties.knob_width || (vertical ? Math.max(widget.width + 6, 20) : Math.max(widget.height + 6, 20));
-                    knob.style.width = kSize + 'px';
-                    knob.style.height = kSize + 'px';
-                    knob.style.borderRadius = '50%';
-                    knob.style.background = '#fff';
-                    knob.style.boxShadow = '0 1px 4px rgba(0,0,0,0.4)';
-                }
+            // Native explicit sizing from knob part styles, falling back to dynamic size
+            const kw = widget.styles?.knob?.width;
+            const kh = widget.styles?.knob?.height;
+            const defaultSize = vertical ? widget.width + 6 : widget.height + 6;
 
-                applyStyles(knob, widget.styles?.knob);
+            knob.style.width = (kw !== undefined ? kw + 'px' : defaultSize + 'px');
+            knob.style.height = (kh !== undefined ? kh + 'px' : defaultSize + 'px');
 
-                // Position knob centered on the track
-                if (vertical) {
-                    const knobH = parseFloat(knob.style.height) || 20;
-                    const trackH = widget.height;
-                    const knobPos = trackH - (pct / 100 * trackH) - knobH / 2;
-                    knob.style.top = knobPos + 'px';
-                    knob.style.left = '50%';
-                    knob.style.transform = 'translateX(-50%)';
-                } else {
-                    const knobW = parseFloat(knob.style.width) || 20;
-                    const trackW = widget.width;
-                    const knobPos = (pct / 100 * trackW) - knobW / 2;
-                    knob.style.left = knobPos + 'px';
-                    knob.style.top = '50%';
-                    knob.style.transform = 'translateY(-50%)';
-                }
+            // Default styles before applying custom ones
+            knob.style.borderRadius = '50%';
+            knob.style.background = '#fff';
+            knob.style.boxShadow = '0 1px 4px rgba(0,0,0,0.4)';
 
-                track.appendChild(knob);
+            applyStyles(knob, widget.styles?.knob);
+
+            // Hide entirely if user sets transparency
+            const knobOpa = parseOpacity(widget.styles?.knob?.bg_opa);
+            if (knobOpa === 0) {
+                knob.style.display = 'none';
             }
+
+            // Apply padding to adjust knob size (LVGL uses negative padding to shrink)
+            if (widget.styles?.knob) {
+                const ks = widget.styles.knob;
+                let knobW = parseFloat(knob.style.width) || defaultSize;
+                let knobH = parseFloat(knob.style.height) || defaultSize;
+                if (ks.pad_all != null) {
+                    knobW += parseInt(ks.pad_all) * 2;
+                    knobH += parseInt(ks.pad_all) * 2;
+                }
+                if (ks.pad_left != null) knobW += parseInt(ks.pad_left);
+                if (ks.pad_right != null) knobW += parseInt(ks.pad_right);
+                if (ks.pad_top != null) knobH += parseInt(ks.pad_top);
+                if (ks.pad_bottom != null) knobH += parseInt(ks.pad_bottom);
+                knob.style.width = Math.max(0, knobW) + 'px';
+                knob.style.height = Math.max(0, knobH) + 'px';
+            }
+
+            // Position knob centered on the track
+            if (vertical) {
+                const knobH = parseFloat(knob.style.height) || 20;
+                const trackH = widget.height;
+                const knobPos = trackH - (pct / 100 * trackH) - knobH / 2;
+                knob.style.top = knobPos + 'px';
+                knob.style.left = '50%';
+                knob.style.transform = 'translateX(-50%)';
+            } else {
+                const knobW = parseFloat(knob.style.width) || 20;
+                const trackW = widget.width;
+                const knobPos = (pct / 100 * trackW) - knobW / 2;
+                knob.style.left = knobPos + 'px';
+                knob.style.top = '50%';
+                knob.style.transform = 'translateY(-50%)';
+            }
+
+            track.appendChild(knob);
 
             el.appendChild(track);
             return el;

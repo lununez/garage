@@ -328,44 +328,6 @@ const YAMLEngine = (() => {
             }
         }
 
-        // Translate designer-only knob_style into ESPHome knob part styles
-        if ((widget.type === 'slider' || widget.type === 'arc') && widget.properties) {
-            const knobStyle = widget.properties.knob_style || 'circle';
-            const vertical = widget.height > widget.width;
-            const knobPart = inner.knob || {};
-
-            if (knobStyle === 'bar') {
-                knobPart.radius = 2;
-                knobPart.bg_color = knobPart.bg_color || '0xFFFFFF';
-                if (widget.properties.knob_width) {
-                    knobPart.width = widget.properties.knob_width;
-                } else {
-                    knobPart.width = vertical ? widget.width + 6 : 4;
-                }
-                if (widget.properties.knob_height) {
-                    knobPart.height = widget.properties.knob_height;
-                } else {
-                    knobPart.height = vertical ? 4 : widget.height + 6;
-                }
-                inner.knob = knobPart;
-            } else if (knobStyle === 'none') {
-                knobPart.bg_opa = 'TRANSP';
-                knobPart.border_width = 0;
-                knobPart.shadow_width = 0;
-                knobPart.width = 0;
-                knobPart.height = 0;
-                inner.knob = knobPart;
-            } else if (knobStyle === 'circle') {
-                const kSize = widget.properties.knob_width;
-                if (kSize) {
-                    knobPart.radius = '50%';
-                    knobPart.width = kSize;
-                    knobPart.height = kSize;
-                    inner.knob = knobPart;
-                }
-            }
-        }
-
         // Events/Actions
         if (widget.events) {
             for (const [eventName, actions] of Object.entries(widget.events)) {
@@ -670,22 +632,6 @@ const YAMLEngine = (() => {
                 for (const [prop, val] of Object.entries(props[part])) {
                     widget.styles[part][prop] = parseStyleValue(prop, val);
                 }
-            }
-        }
-
-        // Infer knob_style from knob part styles when importing
-        if ((type === 'slider' || type === 'arc') && widget.styles.knob) {
-            const ks = widget.styles.knob;
-            if (ks.bg_opa === 'TRANSP' || (ks.width === 0 && ks.height === 0)) {
-                widget.properties.knob_style = 'none';
-            } else if (ks.radius !== undefined && parseInt(ks.radius) <= 4) {
-                widget.properties.knob_style = 'bar';
-                if (ks.width) widget.properties.knob_width = parseInt(ks.width);
-                if (ks.height) widget.properties.knob_height = parseInt(ks.height);
-            }
-            const generatedKeys = ['radius', 'bg_color', 'bg_opa', 'border_width', 'shadow_width', 'width', 'height'];
-            for (const k of generatedKeys) {
-                delete widget.styles.knob[k];
             }
         }
 
