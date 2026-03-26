@@ -148,23 +148,32 @@ const FontManager = (() => {
                     loadedCustomFonts.add(familyName);
                     // Fetch as blob to bypass CORS issues with direct URL references in @font-face
                     fetch(f.file)
-                        .then(r => r.blob())
+                        .then(r => {
+                            if (!r.ok) throw new Error(`HTTP ${r.status} ${r.statusText}`);
+                            return r.blob();
+                        })
                         .then(blob => {
                             const blobUrl = URL.createObjectURL(blob);
                             const ext = f.file.split('.').pop().toLowerCase();
                             const format = ext === 'otf' ? 'opentype' : 'truetype';
                             const style = document.createElement('style');
-                            style.textContent = `@font-face { font-family: '${familyName}'; src: url('${blobUrl}') format('${format}'); }`;
+                            style.textContent = `@font-face { font-family: '${familyName}'; src: url('${blobUrl}') format('${format}'); font-display: swap; }`;
                             document.head.appendChild(style);
                             console.log(`Loaded remote font: ${familyName} from ${f.file}`);
+                            // Re-render after font loads so glyphs display correctly
+                            for (const cb of onChangeCallbacks) cb(projectFonts);
                         })
                         .catch(err => {
-                            console.warn(`Failed to load remote font ${familyName}: ${err.message}. Trying direct URL.`);
+                            console.warn(`Failed to fetch remote font ${familyName}: ${err.message}. Trying direct @font-face URL.`);
                             const ext = f.file.split('.').pop().toLowerCase();
                             const format = ext === 'otf' ? 'opentype' : 'truetype';
                             const style = document.createElement('style');
-                            style.textContent = `@font-face { font-family: '${familyName}'; src: url('${f.file}') format('${format}'); }`;
+                            style.textContent = `@font-face { font-family: '${familyName}'; src: url('${f.file}') format('${format}'); font-display: swap; }`;
                             document.head.appendChild(style);
+                            // Also re-render — the browser may still load the font via direct URL
+                            setTimeout(() => {
+                                for (const cb of onChangeCallbacks) cb(projectFonts);
+                            }, 2000);
                         });
                 }
                 f.family = familyName;
