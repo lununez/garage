@@ -262,6 +262,60 @@ const YAMLEngine = (() => {
     /**
      * Convert a widget instance to a YAML-compatible object.
      */
+    // Transform meter flat properties to ESPHome nested structure
+    function transformMeterToYAML(widget, inner) {
+        const p = widget.properties || {};
+        // Remove flat properties that were already added
+        delete inner.scale_label;
+        delete inner.scale_ticks_count;
+        delete inner.scale_ticks_length;
+        delete inner.scale_ticks_width;
+        delete inner.scale_ticks_color;
+        delete inner.scale_range_from;
+        delete inner.scale_range_to;
+        delete inner.scale_angle_range;
+        delete inner.scale_rotation;
+        delete inner.indicator_value;
+
+        const scale = {};
+        if (p.scale_range_from !== undefined && p.scale_range_from !== 0) scale.range_from = p.scale_range_from;
+        if (p.scale_range_to !== undefined && p.scale_range_to !== 100) scale.range_to = p.scale_range_to;
+        if (p.scale_angle_range !== undefined && p.scale_angle_range !== 270) scale.angle_range = p.scale_angle_range;
+        if (p.scale_rotation !== undefined && p.scale_rotation !== 135) scale.rotation = p.scale_rotation;
+
+        const ticks = {};
+        if (p.scale_ticks_count !== undefined && p.scale_ticks_count !== 11) ticks.count = p.scale_ticks_count;
+        if (p.scale_ticks_length !== undefined && p.scale_ticks_length !== 8) ticks.length = p.scale_ticks_length;
+        if (p.scale_ticks_width !== undefined && p.scale_ticks_width !== 2) ticks.width = p.scale_ticks_width;
+        if (p.scale_ticks_color) ticks.color = formatStyleValue('color', p.scale_ticks_color);
+        if (Object.keys(ticks).length > 0) scale.ticks = ticks;
+
+        const indicators = [];
+        if (p.indicator_value !== undefined) {
+            indicators.push({ line: { width: 2, value: p.indicator_value } });
+        }
+        if (indicators.length > 0) scale.indicators = indicators;
+
+        // Always output scales even if mostly defaults
+        inner.scales = scale;
+    }
+
+    // Transform msgbox flat properties to ESPHome nested structure
+    function transformMsgboxToYAML(widget, inner) {
+        const p = widget.properties || {};
+        // body needs to be a dict with text sub-key
+        if (p.body) {
+            delete inner.body;
+            inner.body = { text: p.body };
+        }
+        // buttons needs to be a list of objects
+        if (p.buttons) {
+            delete inner.buttons;
+            const buttonTexts = String(p.buttons).split('\n').filter(b => b.trim());
+            inner.buttons = buttonTexts.map(text => ({ text: text.trim() }));
+        }
+    }
+
     function widgetToYAML(widget) {
         const obj = {};
         const inner = {};
@@ -315,6 +369,13 @@ const YAMLEngine = (() => {
                     }
                 }
             }
+        }
+
+        // Widget-type specific YAML structure transforms
+        if (widget.type === 'meter') {
+            transformMeterToYAML(widget, inner);
+        } else if (widget.type === 'msgbox') {
+            transformMsgboxToYAML(widget, inner);
         }
 
         // Styles for each part

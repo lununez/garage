@@ -257,7 +257,7 @@ const LVGLWidgets = (() => {
                 end_angle:   { type: 'number', default: 45, label: 'End Angle', min: 0, max: 360 },
                 rotation:    { type: 'number', default: 0, label: 'Rotation' },
                 mode:        { type: 'enum', default: '', label: 'Mode', options: ['', 'NORMAL', 'REVERSE', 'SYMMETRICAL'] },
-                arc_width:   { type: 'number', default: 10, label: 'Arc Width' },
+                arc_width:   { type: 'number', default: 10, label: 'Arc Width', isStyle: true, stylePart: 'main' },
             },
             parts: ['main', 'indicator', 'knob'],
         },
@@ -315,7 +315,7 @@ const LVGLWidgets = (() => {
             defaultSize: { width: 140, height: 32 },
             properties: {
                 options: { type: 'text', default: 'Option 1\nOption 2\nOption 3', label: 'Options (one per line)' },
-                selected: { type: 'number', default: 0, label: 'Selected Index', min: 0 },
+                selected_index: { type: 'number', default: 0, label: 'Selected Index', min: 0 },
                 dir: { type: 'enum', default: '', label: 'Open Direction', options: ['', 'BOTTOM', 'TOP', 'LEFT', 'RIGHT'] },
             },
             parts: ['main', 'indicator', 'selected'],
@@ -419,7 +419,7 @@ const LVGLWidgets = (() => {
             defaultSize: { width: 24, height: 24 },
             properties: {
                 color:      { type: 'color', default: '#00ff00', label: 'Color' },
-                brightness: { type: 'number', default: 255, label: 'Brightness', min: 0, max: 255 },
+                brightness: { type: 'number', default: 100, label: 'Brightness (%)', min: 0, max: 100 },
             },
             parts: ['main'],
         },
