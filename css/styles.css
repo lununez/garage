@@ -135,11 +135,6 @@ label {
     flex-shrink: 0;
 }
 
-#panel-right {
-    border-right: none;
-    border-left: 1px solid var(--border-color);
-}
-
 .panel-header {
     padding: 8px 10px;
     background: var(--bg-surface);
@@ -389,6 +384,105 @@ label {
         radial-gradient(circle, var(--border-color) 1px, transparent 1px);
     background-size: 20px 20px;
     padding: 20px;
+    position: relative;
+}
+
+#canvas-zoom-controls {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    z-index: 20;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 2px 4px;
+}
+#canvas-zoom-controls button {
+    padding: 2px 6px;
+    font-size: 14px;
+    min-width: 24px;
+    border: none;
+    background: transparent;
+    color: var(--text-primary);
+}
+#canvas-zoom-controls button:hover {
+    background: var(--bg-hover);
+}
+#canvas-zoom-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    min-width: 36px;
+    text-align: center;
+    cursor: pointer;
+    user-select: none;
+}
+
+#canvas-scale-wrapper {
+    transform-origin: center center;
+    transition: transform 0.1s ease;
+}
+
+/* ---- Alignment Toolbar ---- */
+#align-toolbar {
+    display: flex;
+    gap: 1px;
+    margin-left: 8px;
+}
+#align-toolbar button {
+    padding: 2px 5px;
+    font-size: 13px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    min-width: 22px;
+    line-height: 1;
+}
+#align-toolbar button:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+#align-toolbar button[disabled] {
+    opacity: 0.3;
+    cursor: default;
+}
+#align-toolbar .toolbar-sep {
+    margin: 0 2px;
+}
+
+/* Multi-select styling */
+.canvas-widget.multi-selected {
+    outline: 2px dashed var(--accent);
+}
+.selection-marquee {
+    position: absolute;
+    border: 1px dashed var(--accent);
+    background: rgba(108, 140, 255, 0.1);
+    pointer-events: none;
+    z-index: 100;
+}
+
+/* ---- Properties panel resizable ---- */
+#panel-right {
+    border-right: none;
+    border-left: 1px solid var(--border-color);
+    position: relative;
+    min-width: 180px;
+    max-width: 600px;
+}
+#right-resize-handle {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 100%;
+    cursor: ew-resize;
+    z-index: 10;
+}
+#right-resize-handle:hover {
+    background: var(--accent);
 }
 
 #canvas {

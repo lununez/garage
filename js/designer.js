@@ -19,13 +19,25 @@ const Designer = (() => {
     };
 
     let canvasEl = null;
+    let canvasScaleWrapper = null;
     let propertiesPanel = null;
     let widgetTreeEl = null;
     let onStateChange = null; // callback for YAML sync
 
+    // Zoom state
+    let zoomLevel = 1;
+    const ZOOM_MIN = 0.25;
+    const ZOOM_MAX = 4;
+    const ZOOM_STEP = 0.25;
+
+    // Multi-select state
+    let multiSelectedIds = [];
+    let marqueeState = null;
+
     // ---- Initialization ----
     function init(options = {}) {
         canvasEl = document.getElementById('canvas');
+        canvasScaleWrapper = document.getElementById('canvas-scale-wrapper');
         propertiesPanel = document.getElementById('properties-panel');
         widgetTreeEl = document.getElementById('widget-tree');
         onStateChange = options.onStateChange || null;
@@ -33,6 +45,9 @@ const Designer = (() => {
         setDisplaySize(state.displayWidth, state.displayHeight);
         setupCanvasEvents();
         setupKeyboardShortcuts();
+        setupZoomControls();
+        setupAlignToolbar();
+        setupRightPanelResize();
         renderAll();
     }
 
@@ -370,18 +385,48 @@ const Designer = (() => {
 
     function onCanvasClick(e) {
         if (PreviewMode.isActive()) return;
-        if (e.target === canvasEl) {
+        if (e.target === canvasEl || e.target === canvasScaleWrapper) {
             state.selectedWidgetId = null;
+            multiSelectedIds = [];
             renderAll();
         }
     }
 
     function onCanvasMouseDown(e) {
-        if (PreviewMode.isActive()) return; // Don't drag widgets in preview mode
+        if (PreviewMode.isActive()) return;
         const widgetEl = e.target.closest('.canvas-widget');
+
+        // Start marquee selection if clicking on empty canvas
+        if (!widgetEl && (e.target === canvasEl || e.target === canvasScaleWrapper)) {
+            const rect = canvasEl.getBoundingClientRect();
+            marqueeState = {
+                startX: (e.clientX - rect.left) / zoomLevel,
+                startY: (e.clientY - rect.top) / zoomLevel,
+            };
+            return;
+        }
+
         if (!widgetEl) return;
 
         const widgetId = widgetEl.dataset.widgetId;
+
+        // Ctrl/Cmd+click for multi-select
+        if (e.ctrlKey || e.metaKey) {
+            if (multiSelectedIds.includes(widgetId)) {
+                multiSelectedIds = multiSelectedIds.filter(id => id !== widgetId);
+            } else {
+                if (state.selectedWidgetId && !multiSelectedIds.includes(state.selectedWidgetId)) {
+                    multiSelectedIds.push(state.selectedWidgetId);
+                }
+                multiSelectedIds.push(widgetId);
+            }
+            state.selectedWidgetId = widgetId;
+            renderAll();
+            return;
+        }
+
+        // Normal click - clear multi-select
+        multiSelectedIds = [];
         state.selectedWidgetId = widgetId;
         renderAll();
 
@@ -427,9 +472,36 @@ const Designer = (() => {
     }
 
     function onCanvasMouseMove(e) {
+        // Handle marquee selection
+        if (marqueeState) {
+            const wrapper = document.getElementById('canvas-wrapper');
+            const rect = canvasEl.getBoundingClientRect();
+            const curX = (e.clientX - rect.left) / zoomLevel;
+            const curY = (e.clientY - rect.top) / zoomLevel;
+
+            let marqueeEl = document.getElementById('selection-marquee');
+            if (!marqueeEl) {
+                marqueeEl = document.createElement('div');
+                marqueeEl.id = 'selection-marquee';
+                marqueeEl.className = 'selection-marquee';
+                canvasEl.appendChild(marqueeEl);
+            }
+
+            const mx = Math.min(marqueeState.startX, curX);
+            const my = Math.min(marqueeState.startY, curY);
+            const mw = Math.abs(curX - marqueeState.startX);
+            const mh = Math.abs(curY - marqueeState.startY);
+
+            marqueeEl.style.left = mx + 'px';
+            marqueeEl.style.top = my + 'px';
+            marqueeEl.style.width = mw + 'px';
+            marqueeEl.style.height = mh + 'px';
+            return;
+        }
+
         if (!dragState) return;
-        const dx = e.clientX - dragState.startX;
-        const dy = e.clientY - dragState.startY;
+        const dx = (e.clientX - dragState.startX) / zoomLevel;
+        const dy = (e.clientY - dragState.startY) / zoomLevel;
 
         if (!dragState.pushed && (Math.abs(dx) > 2 || Math.abs(dy) > 2)) {
             pushUndo();
@@ -463,6 +535,39 @@ const Designer = (() => {
     }
 
     function onCanvasMouseUp(e) {
+        // Handle marquee selection completion
+        if (marqueeState) {
+            const marqueeEl = document.getElementById('selection-marquee');
+            if (marqueeEl) {
+                const rect = canvasEl.getBoundingClientRect();
+                const endX = (e.clientX - rect.left) / zoomLevel;
+                const endY = (e.clientY - rect.top) / zoomLevel;
+
+                const mx = Math.min(marqueeState.startX, endX);
+                const my = Math.min(marqueeState.startY, endY);
+                const mw = Math.abs(endX - marqueeState.startX);
+                const mh = Math.abs(endY - marqueeState.startY);
+
+                if (mw > 5 && mh > 5) {
+                    const page = getCurrentPage();
+                    multiSelectedIds = [];
+                    for (const widget of page.widgets) {
+                        if (widget.x + widget.width > mx && widget.x < mx + mw &&
+                            widget.y + widget.height > my && widget.y < my + mh) {
+                            multiSelectedIds.push(widget.id);
+                        }
+                    }
+                    if (multiSelectedIds.length > 0) {
+                        state.selectedWidgetId = multiSelectedIds[0];
+                    }
+                }
+                marqueeEl.remove();
+            }
+            marqueeState = null;
+            renderAll();
+            return;
+        }
+
         if (dragState && dragState.pushed) {
             notifyChange();
         }
@@ -480,8 +585,8 @@ const Designer = (() => {
         if (!type) return;
 
         const rect = canvasEl.getBoundingClientRect();
-        const x = Math.round(e.clientX - rect.left);
-        const y = Math.round(e.clientY - rect.top);
+        const x = Math.round((e.clientX - rect.left) / zoomLevel);
+        const y = Math.round((e.clientY - rect.top) / zoomLevel);
 
         // Check if dropping onto a container widget
         let parentId = null;
@@ -529,18 +634,33 @@ const Designer = (() => {
                 state.selectedWidgetId = null;
                 renderAll();
             }
-            // Arrow keys for nudging
+            // Select All
+            else if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                const page = getCurrentPage();
+                multiSelectedIds = page.widgets.map(w => w.id);
+                if (multiSelectedIds.length > 0) {
+                    state.selectedWidgetId = multiSelectedIds[0];
+                }
+                renderAll();
+            }
+            // Arrow keys for nudging (works with multi-select)
             else if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && state.selectedWidgetId) {
                 e.preventDefault();
                 const page = getCurrentPage();
-                const widget = findWidgetById(state.selectedWidgetId, page.widgets);
-                if (widget) {
-                    const step = e.shiftKey ? 10 : 1;
+                const step = e.shiftKey ? 10 : 1;
+                const ids = multiSelectedIds.length > 0 ? multiSelectedIds :
+                    (state.selectedWidgetId ? [state.selectedWidgetId] : []);
+                if (ids.length > 0) {
                     pushUndo();
-                    if (e.key === 'ArrowUp') widget.y = Math.max(0, widget.y - step);
-                    if (e.key === 'ArrowDown') widget.y = Math.min(state.displayHeight - widget.height, widget.y + step);
-                    if (e.key === 'ArrowLeft') widget.x = Math.max(0, widget.x - step);
-                    if (e.key === 'ArrowRight') widget.x = Math.min(state.displayWidth - widget.width, widget.x + step);
+                    for (const id of ids) {
+                        const widget = findWidgetById(id, page.widgets);
+                        if (!widget) continue;
+                        if (e.key === 'ArrowUp') widget.y = Math.max(0, widget.y - step);
+                        if (e.key === 'ArrowDown') widget.y = Math.min(state.displayHeight - widget.height, widget.y + step);
+                        if (e.key === 'ArrowLeft') widget.x = Math.max(0, widget.x - step);
+                        if (e.key === 'ArrowRight') widget.x = Math.min(state.displayWidth - widget.width, widget.x + step);
+                    }
                     renderCanvas();
                     renderProperties();
                     notifyChange();
@@ -586,7 +706,10 @@ const Designer = (() => {
     function renderWidgetList(widgets, parentEl) {
         for (const widget of widgets) {
             const wrapperEl = document.createElement('div');
-            wrapperEl.className = `canvas-widget ${widget.id === state.selectedWidgetId ? 'selected' : ''}`;
+            let cls = 'canvas-widget';
+            if (widget.id === state.selectedWidgetId) cls += ' selected';
+            if (multiSelectedIds.includes(widget.id)) cls += ' multi-selected';
+            wrapperEl.className = cls;
             wrapperEl.dataset.widgetId = widget.id;
             wrapperEl.style.left = widget.x + 'px';
             wrapperEl.style.top = widget.y + 'px';
@@ -1119,6 +1242,186 @@ const Designer = (() => {
         }
     }
 
+    // ---- Zoom Controls ----
+    function setupZoomControls() {
+        const zoomInBtn = document.getElementById('btn-zoom-in');
+        const zoomOutBtn = document.getElementById('btn-zoom-out');
+        const zoomFitBtn = document.getElementById('btn-zoom-fit');
+        const zoomLabel = document.getElementById('canvas-zoom-label');
+
+        if (zoomInBtn) zoomInBtn.addEventListener('click', () => setZoom(zoomLevel + ZOOM_STEP));
+        if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => setZoom(zoomLevel - ZOOM_STEP));
+        if (zoomLabel) zoomLabel.addEventListener('click', () => setZoom(1));
+        if (zoomFitBtn) zoomFitBtn.addEventListener('click', zoomToFit);
+
+        // Mouse wheel zoom
+        const wrapper = document.getElementById('canvas-wrapper');
+        if (wrapper) {
+            wrapper.addEventListener('wheel', (e) => {
+                if (e.ctrlKey || e.metaKey) {
+                    e.preventDefault();
+                    const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+                    setZoom(zoomLevel + delta);
+                }
+            }, { passive: false });
+        }
+    }
+
+    function setZoom(level) {
+        zoomLevel = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(level * 100) / 100));
+        if (canvasScaleWrapper) {
+            canvasScaleWrapper.style.transform = `scale(${zoomLevel})`;
+        }
+        const label = document.getElementById('canvas-zoom-label');
+        if (label) label.textContent = Math.round(zoomLevel * 100) + '%';
+    }
+
+    function zoomToFit() {
+        const wrapper = document.getElementById('canvas-wrapper');
+        if (!wrapper) return;
+        const wrapperRect = wrapper.getBoundingClientRect();
+        const padded = 40;
+        const scaleX = (wrapperRect.width - padded) / state.displayWidth;
+        const scaleY = (wrapperRect.height - padded) / state.displayHeight;
+        setZoom(Math.min(scaleX, scaleY, ZOOM_MAX));
+    }
+
+    // ---- Alignment Tools ----
+    function setupAlignToolbar() {
+        const toolbar = document.getElementById('align-toolbar');
+        if (!toolbar) return;
+        toolbar.addEventListener('click', (e) => {
+            const btn = e.target.closest('button[data-align]');
+            if (!btn) return;
+            const action = btn.dataset.align;
+            alignWidgets(action);
+        });
+    }
+
+    function getAlignableWidgets() {
+        const page = getCurrentPage();
+        if (multiSelectedIds.length >= 2) {
+            return multiSelectedIds.map(id => findWidgetById(id, page.widgets)).filter(Boolean);
+        }
+        if (state.selectedWidgetId) {
+            return [findWidgetById(state.selectedWidgetId, page.widgets)].filter(Boolean);
+        }
+        return [];
+    }
+
+    function alignWidgets(action) {
+        const widgets = getAlignableWidgets();
+        if (widgets.length === 0) return;
+
+        pushUndo();
+
+        // Single widget: align relative to canvas
+        if (widgets.length === 1) {
+            const w = widgets[0];
+            switch (action) {
+                case 'left': w.x = 0; break;
+                case 'center-h': w.x = Math.round((state.displayWidth - w.width) / 2); break;
+                case 'right': w.x = state.displayWidth - w.width; break;
+                case 'top': w.y = 0; break;
+                case 'center-v': w.y = Math.round((state.displayHeight - w.height) / 2); break;
+                case 'bottom': w.y = state.displayHeight - w.height; break;
+            }
+        } else {
+            // Multiple widgets: align relative to each other
+            const bounds = {
+                left: Math.min(...widgets.map(w => w.x)),
+                right: Math.max(...widgets.map(w => w.x + w.width)),
+                top: Math.min(...widgets.map(w => w.y)),
+                bottom: Math.max(...widgets.map(w => w.y + w.height)),
+            };
+            bounds.centerX = Math.round((bounds.left + bounds.right) / 2);
+            bounds.centerY = Math.round((bounds.top + bounds.bottom) / 2);
+
+            switch (action) {
+                case 'left':
+                    widgets.forEach(w => w.x = bounds.left);
+                    break;
+                case 'center-h':
+                    widgets.forEach(w => w.x = bounds.centerX - Math.round(w.width / 2));
+                    break;
+                case 'right':
+                    widgets.forEach(w => w.x = bounds.right - w.width);
+                    break;
+                case 'top':
+                    widgets.forEach(w => w.y = bounds.top);
+                    break;
+                case 'center-v':
+                    widgets.forEach(w => w.y = bounds.centerY - Math.round(w.height / 2));
+                    break;
+                case 'bottom':
+                    widgets.forEach(w => w.y = bounds.bottom - w.height);
+                    break;
+                case 'distribute-h': {
+                    if (widgets.length < 3) break;
+                    const sorted = [...widgets].sort((a, b) => a.x - b.x);
+                    const totalSpace = bounds.right - bounds.left - sorted.reduce((s, w) => s + w.width, 0);
+                    const gap = totalSpace / (sorted.length - 1);
+                    let curX = sorted[0].x + sorted[0].width;
+                    for (let i = 1; i < sorted.length - 1; i++) {
+                        sorted[i].x = Math.round(curX + gap);
+                        curX = sorted[i].x + sorted[i].width;
+                    }
+                    break;
+                }
+                case 'distribute-v': {
+                    if (widgets.length < 3) break;
+                    const sorted = [...widgets].sort((a, b) => a.y - b.y);
+                    const totalSpace = bounds.bottom - bounds.top - sorted.reduce((s, w) => s + w.height, 0);
+                    const gap = totalSpace / (sorted.length - 1);
+                    let curY = sorted[0].y + sorted[0].height;
+                    for (let i = 1; i < sorted.length - 1; i++) {
+                        sorted[i].y = Math.round(curY + gap);
+                        curY = sorted[i].y + sorted[i].height;
+                    }
+                    break;
+                }
+            }
+        }
+
+        renderAll();
+        notifyChange();
+    }
+
+    // ---- Right Panel Resize ----
+    function setupRightPanelResize() {
+        const handle = document.getElementById('right-resize-handle');
+        const panel = document.getElementById('panel-right');
+        if (!handle || !panel) return;
+
+        let resizing = false;
+        let startX = 0;
+        let startWidth = 0;
+
+        handle.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            resizing = true;
+            startX = e.clientX;
+            startWidth = panel.offsetWidth;
+            document.body.style.cursor = 'ew-resize';
+            document.body.style.userSelect = 'none';
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!resizing) return;
+            const dx = startX - e.clientX;
+            const newWidth = Math.max(180, Math.min(600, startWidth + dx));
+            panel.style.width = newWidth + 'px';
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (resizing) {
+                resizing = false;
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+            }
+        });
+    }
+
     // ---- Widget Tree ----
     let draggedWidgetId = null;
     let dragOverNodeEl = null;
@@ -1372,7 +1675,10 @@ const Designer = (() => {
         findWidgetById,
         renderAll,
         get selectedWidgetId() { return state.selectedWidgetId; },
-        set selectedWidgetId(id) { state.selectedWidgetId = id; renderAll(); },
+        set selectedWidgetId(id) { state.selectedWidgetId = id; multiSelectedIds = []; renderAll(); },
+        get multiSelectedIds() { return multiSelectedIds; },
+        alignWidgets,
+        setZoom,
         findWidgetParentArray,
     };
 })();

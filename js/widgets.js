@@ -315,7 +315,7 @@ const LVGLWidgets = (() => {
             defaultSize: { width: 140, height: 32 },
             properties: {
                 options: { type: 'text', default: 'Option 1\nOption 2\nOption 3', label: 'Options (one per line)' },
-                selected_index: { type: 'number', default: 0, label: 'Selected Index', min: 0 },
+                selected: { type: 'number', default: 0, label: 'Selected Index', min: 0 },
                 dir: { type: 'enum', default: '', label: 'Open Direction', options: ['', 'BOTTOM', 'TOP', 'LEFT', 'RIGHT'] },
             },
             parts: ['main', 'indicator', 'selected'],
