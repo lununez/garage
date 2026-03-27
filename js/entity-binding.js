@@ -715,6 +715,171 @@ const EntityBinding = (() => {
         ];
     }
 
+    // ---- Condition YAML Generation ----
+
+    /**
+     * Generate sensor blocks for widget conditions.
+     * Conditions create on_value/on_state handlers that show/hide widgets
+     * or update their styles based on HA entity state.
+     *
+     * Returns { sensor: [...], binary_sensor: [...] }
+     */
+    function generateConditionBlocks(designerState) {
+        const sensors = {};       // keyed by sensor ID to merge handlers
+        const binarySensors = {}; // keyed by sensor ID
+
+        for (const page of designerState.pages) {
+            collectConditionSensors(page.widgets, sensors, binarySensors);
+        }
+
+        return {
+            sensor: Object.values(sensors),
+            binary_sensor: Object.values(binarySensors),
+        };
+    }
+
+    function collectConditionSensors(widgets, sensors, binarySensors) {
+        for (const widget of widgets) {
+            if (widget.conditions && widget.conditions.length > 0) {
+                for (const cond of widget.conditions) {
+                    if (!cond.entity_id || !cond.value) continue;
+                    generateConditionSensorBlock(widget, cond, sensors, binarySensors);
+                }
+            }
+            if (widget.children) {
+                collectConditionSensors(widget.children, sensors, binarySensors);
+            }
+        }
+    }
+
+    function generateConditionSensorBlock(widget, cond, sensors, binarySensors) {
+        const entityId = cond.entity_id;
+        const domain = entityId.split('.')[0];
+        const sensorId = 'ha_cond_' + entityId.replace(/\./g, '_')
+            + (cond.attribute ? '_' + cond.attribute : '');
+
+        // Determine if binary_sensor or regular sensor
+        const isBinary = domain === 'binary_sensor';
+        const collection = isBinary ? binarySensors : sensors;
+        const handlerKey = isBinary ? 'on_state' : 'on_value';
+
+        // Create or get existing sensor block
+        if (!collection[sensorId]) {
+            const block = {
+                platform: 'homeassistant',
+                id: sensorId,
+                entity_id: entityId,
+            };
+            if (cond.attribute) block.attribute = cond.attribute;
+            block[handlerKey] = [];
+            collection[sensorId] = block;
+        }
+
+        // Build the condition lambda
+        const lambda = buildConditionLambda(cond, isBinary);
+
+        // Build then/else actions
+        const thenActions = buildConditionActions(widget, cond, 'then');
+        const elseActions = buildConditionActions(widget, cond, 'else');
+
+        const ifBlock = {
+            if: {
+                condition: { lambda: '__LAMBDA__' + lambda },
+                then: thenActions,
+            },
+        };
+        if (elseActions.length > 0) {
+            ifBlock.if.else = elseActions;
+        }
+
+        collection[sensorId][handlerKey].push(ifBlock);
+    }
+
+    function buildConditionLambda(cond, isBinary) {
+        const val = cond.value;
+        const op = cond.operator || 'eq';
+
+        // For binary sensors, x is bool
+        if (isBinary) {
+            const boolVal = (val === 'on' || val === 'true' || val === '1' || val === 'open') ? 'true' : 'false';
+            return op === 'neq' ? `return x != ${boolVal};` : `return x == ${boolVal};`;
+        }
+
+        // Try to detect if value is numeric
+        const numVal = parseFloat(val);
+        const isNum = !isNaN(numVal) && String(numVal) === val.trim();
+
+        if (isNum) {
+            switch (op) {
+                case 'eq': return `return x == ${numVal};`;
+                case 'neq': return `return x != ${numVal};`;
+                case 'gt': return `return x > ${numVal};`;
+                case 'lt': return `return x < ${numVal};`;
+                case 'gte': return `return x >= ${numVal};`;
+                case 'lte': return `return x <= ${numVal};`;
+                default: return `return x == ${numVal};`;
+            }
+        }
+
+        // String comparison - x is std::string for text_sensor, float for sensor
+        // For HA sensors with string states, we use str_sprintf
+        const escaped = val.replace(/"/g, '\\"');
+        switch (op) {
+            case 'eq': return `return str_sprintf("%s", x.c_str()) == "${escaped}";`;
+            case 'neq': return `return str_sprintf("%s", x.c_str()) != "${escaped}";`;
+            case 'contains': return `return str_sprintf("%s", x.c_str()).find("${escaped}") != std::string::npos;`;
+            default: return `return str_sprintf("%s", x.c_str()) == "${escaped}";`;
+        }
+    }
+
+    function buildConditionActions(widget, cond, phase) {
+        const actionType = phase === 'then' ? cond.then_action : (cond.else_action || getOpposite(cond.then_action));
+        if (!actionType) return [];
+
+        const actions = [];
+
+        if (actionType === 'show') {
+            actions.push({ 'lvgl.widget.show': { id: widget.id } });
+        } else if (actionType === 'hide') {
+            actions.push({ 'lvgl.widget.hide': { id: widget.id } });
+        } else if (actionType === 'enable' || actionType === 'disable') {
+            actions.push({
+                'lvgl.widget.update': {
+                    id: widget.id,
+                    state: { disabled: actionType === 'disable' },
+                },
+            });
+        } else if (actionType === 'checked' || actionType === 'unchecked') {
+            actions.push({
+                'lvgl.widget.update': {
+                    id: widget.id,
+                    state: { checked: actionType === 'checked' },
+                },
+            });
+        } else if (actionType === 'style') {
+            const prefix = phase === 'then' ? 'style_' : 'else_style_';
+            const update = { id: widget.id };
+            if (cond[prefix + 'bg_color']) update.bg_color = cond[prefix + 'bg_color'];
+            if (cond[prefix + 'bg_opa']) update.bg_opa = cond[prefix + 'bg_opa'];
+            if (cond[prefix + 'text_color']) update.text_color = cond[prefix + 'text_color'];
+            if (cond[prefix + 'text']) update.text = cond[prefix + 'text'];
+            if (Object.keys(update).length > 1) {
+                actions.push({ 'lvgl.widget.update': update });
+            }
+        }
+
+        return actions;
+    }
+
+    function getOpposite(action) {
+        const opposites = {
+            show: 'hide', hide: 'show',
+            enable: 'disable', disable: 'enable',
+            checked: 'unchecked', unchecked: 'checked',
+        };
+        return opposites[action] || '';
+    }
+
     // ---- Entity Picker Helpers ----
 
     /**
@@ -743,6 +908,7 @@ const EntityBinding = (() => {
         createBinding,
         removeBinding,
         generateSensorBlocks,
+        generateConditionBlocks,
         generateConditionalActions,
         getEntityName,
         getCompatibleRoles,

@@ -911,6 +911,122 @@ const Designer = (() => {
         }
         html += `</div></div>`;
 
+        // Conditions section
+        const conditions = widget.conditions || [];
+        html += `<div class="prop-section">`;
+        html += `<div class="prop-section-header${conditions.length > 0 ? ' expanded' : ''}">Conditions</div>`;
+        html += `<div class="prop-section-body">`;
+        html += `<div style="margin:2px 6px;font-size:10px;color:var(--text-muted)">Change visibility or styles based on HA entity state</div>`;
+
+        conditions.forEach((cond, ci) => {
+            html += `<div class="condition-block" style="margin:4px 6px;padding:6px;background:var(--bg-surface);border-radius:4px;border-left:3px solid var(--accent);font-size:11px">`;
+            html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">`;
+            html += `<span style="color:var(--accent);font-weight:600">Condition ${ci + 1}</span>`;
+            html += `<button data-remove-condition="${ci}" style="padding:1px 5px;font-size:10px">&times;</button>`;
+            html += `</div>`;
+
+            // Entity source
+            html += `<div class="prop-row"><span class="prop-label">Entity</span><div class="prop-input">`;
+            html += `<input type="text" value="${escapeAttr(cond.entity_id || '')}" data-condition="${ci}" data-cond-field="entity_id" placeholder="entity.id or leave blank for binding">`;
+            html += `</div></div>`;
+
+            // Attribute (optional)
+            html += `<div class="prop-row"><span class="prop-label">Attribute</span><div class="prop-input">`;
+            html += `<input type="text" value="${escapeAttr(cond.attribute || '')}" data-condition="${ci}" data-cond-field="attribute" placeholder="(optional)">`;
+            html += `</div></div>`;
+
+            // Operator
+            html += `<div class="prop-row"><span class="prop-label">When</span><div class="prop-input">`;
+            html += `<select data-condition="${ci}" data-cond-field="operator">`;
+            const ops = [
+                { v: 'eq', l: 'equals' }, { v: 'neq', l: 'not equals' },
+                { v: 'gt', l: '>' }, { v: 'lt', l: '<' },
+                { v: 'gte', l: '>=' }, { v: 'lte', l: '<=' },
+                { v: 'contains', l: 'contains' },
+            ];
+            for (const op of ops) {
+                html += `<option value="${op.v}" ${cond.operator === op.v ? 'selected' : ''}>${op.l}</option>`;
+            }
+            html += `</select></div></div>`;
+
+            // Value
+            html += `<div class="prop-row"><span class="prop-label">Value</span><div class="prop-input">`;
+            html += `<input type="text" value="${escapeAttr(cond.value || '')}" data-condition="${ci}" data-cond-field="value" placeholder="open, closed, 50, etc.">`;
+            html += `</div></div>`;
+
+            // Then action
+            html += `<div class="prop-row"><span class="prop-label">Then</span><div class="prop-input">`;
+            html += `<select data-condition="${ci}" data-cond-field="then_action">`;
+            const actions = [
+                { v: 'show', l: 'Show widget' }, { v: 'hide', l: 'Hide widget' },
+                { v: 'enable', l: 'Enable' }, { v: 'disable', l: 'Disable' },
+                { v: 'checked', l: 'Set checked' }, { v: 'unchecked', l: 'Set unchecked' },
+                { v: 'style', l: 'Change style...' },
+            ];
+            for (const a of actions) {
+                html += `<option value="${a.v}" ${cond.then_action === a.v ? 'selected' : ''}>${a.l}</option>`;
+            }
+            html += `</select></div></div>`;
+
+            // Style overrides (shown when then_action is 'style')
+            if (cond.then_action === 'style') {
+                html += `<div style="margin-top:4px;padding-top:4px;border-top:1px solid var(--border-color)">`;
+                html += `<div class="prop-row"><span class="prop-label">bg_color</span><div class="prop-input">`;
+                html += `<input type="text" value="${escapeAttr(cond.style_bg_color || '')}" data-condition="${ci}" data-cond-field="style_bg_color" placeholder="0xFF0000">`;
+                html += `</div></div>`;
+                html += `<div class="prop-row"><span class="prop-label">bg_opa</span><div class="prop-input">`;
+                html += `<input type="text" value="${escapeAttr(cond.style_bg_opa || '')}" data-condition="${ci}" data-cond-field="style_bg_opa" placeholder="COVER, 50%">`;
+                html += `</div></div>`;
+                html += `<div class="prop-row"><span class="prop-label">text_color</span><div class="prop-input">`;
+                html += `<input type="text" value="${escapeAttr(cond.style_text_color || '')}" data-condition="${ci}" data-cond-field="style_text_color" placeholder="0x00FF00">`;
+                html += `</div></div>`;
+                html += `<div class="prop-row"><span class="prop-label">text</span><div class="prop-input">`;
+                html += `<input type="text" value="${escapeAttr(cond.style_text || '')}" data-condition="${ci}" data-cond-field="style_text" placeholder="Custom text when true">`;
+                html += `</div></div>`;
+                html += `</div>`;
+            }
+
+            // Else action (optional)
+            html += `<div class="prop-row"><span class="prop-label">Else</span><div class="prop-input">`;
+            html += `<select data-condition="${ci}" data-cond-field="else_action">`;
+            const elseActions = [
+                { v: '', l: '(opposite)' },
+                { v: 'show', l: 'Show widget' }, { v: 'hide', l: 'Hide widget' },
+                { v: 'enable', l: 'Enable' }, { v: 'disable', l: 'Disable' },
+                { v: 'checked', l: 'Set checked' }, { v: 'unchecked', l: 'Set unchecked' },
+                { v: 'style', l: 'Change style...' },
+            ];
+            for (const a of elseActions) {
+                html += `<option value="${a.v}" ${cond.else_action === a.v ? 'selected' : ''}>${a.l}</option>`;
+            }
+            html += `</select></div></div>`;
+
+            // Else style overrides
+            if (cond.else_action === 'style') {
+                html += `<div style="margin-top:4px;padding-top:4px;border-top:1px solid var(--border-color)">`;
+                html += `<div class="prop-row"><span class="prop-label">bg_color</span><div class="prop-input">`;
+                html += `<input type="text" value="${escapeAttr(cond.else_style_bg_color || '')}" data-condition="${ci}" data-cond-field="else_style_bg_color" placeholder="0x808080">`;
+                html += `</div></div>`;
+                html += `<div class="prop-row"><span class="prop-label">bg_opa</span><div class="prop-input">`;
+                html += `<input type="text" value="${escapeAttr(cond.else_style_bg_opa || '')}" data-condition="${ci}" data-cond-field="else_style_bg_opa" placeholder="COVER, 50%">`;
+                html += `</div></div>`;
+                html += `<div class="prop-row"><span class="prop-label">text_color</span><div class="prop-input">`;
+                html += `<input type="text" value="${escapeAttr(cond.else_style_text_color || '')}" data-condition="${ci}" data-cond-field="else_style_text_color" placeholder="0xFFFFFF">`;
+                html += `</div></div>`;
+                html += `<div class="prop-row"><span class="prop-label">text</span><div class="prop-input">`;
+                html += `<input type="text" value="${escapeAttr(cond.else_style_text || '')}" data-condition="${ci}" data-cond-field="else_style_text" placeholder="Custom text when false">`;
+                html += `</div></div>`;
+                html += `</div>`;
+            }
+
+            html += `</div>`;
+        });
+
+        html += `<div style="margin:6px;text-align:center">`;
+        html += `<button id="btn-add-condition" style="font-size:11px;width:100%">+ Add Condition</button>`;
+        html += `</div>`;
+        html += `</div></div>`;
+
         // Events section
         const applicableEvents = LVGLWidgets.getEventsForWidget(widget.type);
         html += `<div class="prop-section">`;
@@ -1238,6 +1354,64 @@ const Designer = (() => {
                 if (eventSel && actionSel && state.selectedWidgetId) {
                     addEventAction(state.selectedWidgetId, eventSel.value, actionSel.value);
                 }
+            });
+        }
+
+        // Condition fields
+        propertiesPanel.querySelectorAll('[data-condition]').forEach(input => {
+            const handler = (e) => {
+                const ci = parseInt(e.target.dataset.condition);
+                const field = e.target.dataset.condField;
+                const page = getCurrentPage();
+                const widget = findWidgetById(state.selectedWidgetId, page.widgets);
+                if (!widget || !widget.conditions || !widget.conditions[ci]) return;
+                pushUndo();
+                widget.conditions[ci][field] = e.target.value;
+                // Re-render if action type changed (to show/hide style fields)
+                if (field === 'then_action' || field === 'else_action') {
+                    renderProperties();
+                }
+                notifyChange();
+            };
+            input.addEventListener('change', handler);
+        });
+
+        // Remove condition buttons
+        propertiesPanel.querySelectorAll('[data-remove-condition]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const ci = parseInt(e.target.dataset.removeCondition);
+                const page = getCurrentPage();
+                const widget = findWidgetById(state.selectedWidgetId, page.widgets);
+                if (!widget || !widget.conditions) return;
+                pushUndo();
+                widget.conditions.splice(ci, 1);
+                renderProperties();
+                notifyChange();
+            });
+        });
+
+        // Add condition button
+        const addCondBtn = document.getElementById('btn-add-condition');
+        if (addCondBtn) {
+            addCondBtn.addEventListener('click', () => {
+                const page = getCurrentPage();
+                const widget = findWidgetById(state.selectedWidgetId, page.widgets);
+                if (!widget) return;
+                pushUndo();
+                if (!widget.conditions) widget.conditions = [];
+                const defaultEntity = widget.binding ? widget.binding.entity_id : '';
+                widget.conditions.push({
+                    entity_id: defaultEntity,
+                    attribute: '',
+                    operator: 'eq',
+                    value: '',
+                    then_action: 'show',
+                    else_action: '',
+                    style_bg_color: '', style_bg_opa: '', style_text_color: '', style_text: '',
+                    else_style_bg_color: '', else_style_bg_opa: '', else_style_text_color: '', else_style_text: '',
+                });
+                renderProperties();
+                notifyChange();
             });
         }
     }

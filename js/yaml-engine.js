@@ -212,15 +212,27 @@ const YAMLEngine = (() => {
     function generateFullYAML(designerState) {
         let yaml = generateYAML(designerState);
 
-        // Generate sensor blocks from entity bindings
         if (typeof EntityBinding !== 'undefined') {
-            const sensorBlocks = EntityBinding.generateSensorBlocks(designerState);
+            // Collect binding sensors
+            const bindingSensors = EntityBinding.generateSensorBlocks(designerState);
+            // Collect condition sensors
+            const conditionSensors = EntityBinding.generateConditionBlocks(designerState);
 
-            if (sensorBlocks.sensor && sensorBlocks.sensor.length > 0) {
-                yaml += '\n' + generateSensorSectionYaml('sensor', sensorBlocks.sensor);
+            // Merge sensors (binding + condition) by combining arrays
+            const allSensors = [
+                ...(bindingSensors.sensor || []),
+                ...(conditionSensors.sensor || []),
+            ];
+            const allBinarySensors = [
+                ...(bindingSensors.binary_sensor || []),
+                ...(conditionSensors.binary_sensor || []),
+            ];
+
+            if (allSensors.length > 0) {
+                yaml += '\n' + generateSensorSectionYaml('sensor', allSensors);
             }
-            if (sensorBlocks.binary_sensor && sensorBlocks.binary_sensor.length > 0) {
-                yaml += '\n' + generateSensorSectionYaml('binary_sensor', sensorBlocks.binary_sensor);
+            if (allBinarySensors.length > 0) {
+                yaml += '\n' + generateSensorSectionYaml('binary_sensor', allBinarySensors);
             }
         }
 
@@ -229,6 +241,7 @@ const YAMLEngine = (() => {
 
     /**
      * Generate YAML text for a sensor/binary_sensor section.
+     * Handles both simple action blocks and complex if/then/else condition blocks.
      */
     function generateSensorSectionYaml(sectionKey, entries) {
         let yaml = sectionKey + ':\n';
@@ -243,17 +256,97 @@ const YAMLEngine = (() => {
             if (handler) {
                 yaml += '    ' + handlerKey + ':\n';
                 for (const action of handler) {
-                    const actionKey = Object.keys(action)[0];
-                    const actionData = action[actionKey];
-                    yaml += '      - ' + actionKey + ':\n';
-                    for (const [key, val] of Object.entries(actionData)) {
-                        if (typeof val === 'string' && val.startsWith(LAMBDA_SENTINEL)) {
-                            yaml += '          ' + key + ': !lambda "' + val.slice(LAMBDA_SENTINEL.length) + '"\n';
-                        } else {
-                            yaml += '          ' + key + ': ' + val + '\n';
-                        }
-                    }
+                    yaml += serializeActionBlock(action, 6);
                 }
+            }
+        }
+        return yaml;
+    }
+
+    /**
+     * Serialize a single action block to YAML string.
+     * Handles simple actions, nested objects, and if/then/else conditions.
+     */
+    function serializeActionBlock(action, indent) {
+        const pad = ' '.repeat(indent);
+        let yaml = '';
+
+        if (action.if) {
+            // Conditional if/then/else block
+            yaml += pad + '- if:\n';
+            const ifBlock = action.if;
+
+            // Condition
+            if (ifBlock.condition) {
+                yaml += pad + '    condition:\n';
+                if (typeof ifBlock.condition === 'string') {
+                    yaml += pad + '      ' + ifBlock.condition + '\n';
+                } else if (ifBlock.condition.lambda) {
+                    const lambdaCode = ifBlock.condition.lambda.startsWith(LAMBDA_SENTINEL)
+                        ? ifBlock.condition.lambda.slice(LAMBDA_SENTINEL.length)
+                        : ifBlock.condition.lambda;
+                    yaml += pad + '      lambda: !lambda "' + lambdaCode + '"\n';
+                }
+            }
+
+            // Then
+            if (ifBlock.then && ifBlock.then.length > 0) {
+                yaml += pad + '    then:\n';
+                for (const thenAction of ifBlock.then) {
+                    yaml += serializeSimpleAction(thenAction, indent + 6);
+                }
+            }
+
+            // Else
+            if (ifBlock.else && ifBlock.else.length > 0) {
+                yaml += pad + '    else:\n';
+                for (const elseAction of ifBlock.else) {
+                    yaml += serializeSimpleAction(elseAction, indent + 6);
+                }
+            }
+        } else {
+            // Simple action
+            yaml += serializeSimpleAction(action, indent);
+        }
+
+        return yaml;
+    }
+
+    /**
+     * Serialize a simple action (like lvgl.widget.update) to YAML string.
+     */
+    function serializeSimpleAction(action, indent) {
+        const pad = ' '.repeat(indent);
+        let yaml = '';
+
+        for (const [actionKey, actionData] of Object.entries(action)) {
+            yaml += pad + '- ' + actionKey + ':\n';
+            if (typeof actionData === 'object' && actionData !== null) {
+                yaml += serializeYamlObject(actionData, indent + 4);
+            }
+        }
+        return yaml;
+    }
+
+    /**
+     * Serialize a YAML object with proper lambda handling.
+     */
+    function serializeYamlObject(obj, indent) {
+        const pad = ' '.repeat(indent);
+        let yaml = '';
+
+        for (const [key, val] of Object.entries(obj)) {
+            if (val === null || val === undefined) continue;
+
+            if (typeof val === 'string' && val.startsWith(LAMBDA_SENTINEL)) {
+                yaml += pad + key + ': !lambda "' + val.slice(LAMBDA_SENTINEL.length) + '"\n';
+            } else if (typeof val === 'object' && !Array.isArray(val)) {
+                yaml += pad + key + ':\n';
+                yaml += serializeYamlObject(val, indent + 2);
+            } else if (typeof val === 'boolean') {
+                yaml += pad + key + ': ' + (val ? 'true' : 'false') + '\n';
+            } else {
+                yaml += pad + key + ': ' + val + '\n';
             }
         }
         return yaml;
