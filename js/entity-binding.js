@@ -28,8 +28,8 @@ const EntityBinding = (() => {
     const BINDING_TEMPLATES = {
         cover: {
             position: {
-                label: 'Position (slider)',
-                widgetTypes: ['slider'],
+                label: 'Position (slider/arc)',
+                widgetTypes: ['slider', 'arc', 'bar'],
                 syncFrom: {
                     platform: 'sensor',
                     attribute: 'current_position',
@@ -45,7 +45,7 @@ const EntityBinding = (() => {
             },
             open: {
                 label: 'Open (button)',
-                widgetTypes: ['button'],
+                widgetTypes: ['button', 'obj', 'label', 'image'],
                 syncTo: {
                     event: 'on_press',
                     haAction: 'cover.open_cover',
@@ -54,7 +54,7 @@ const EntityBinding = (() => {
             },
             close: {
                 label: 'Close (button)',
-                widgetTypes: ['button'],
+                widgetTypes: ['button', 'obj', 'label', 'image'],
                 syncTo: {
                     event: 'on_press',
                     haAction: 'cover.close_cover',
@@ -63,18 +63,28 @@ const EntityBinding = (() => {
             },
             stop: {
                 label: 'Stop (button)',
-                widgetTypes: ['button'],
+                widgetTypes: ['button', 'obj', 'label', 'image'],
                 syncTo: {
                     event: 'on_press',
                     haAction: 'cover.stop_cover',
                     dataTemplate: {},
                 },
             },
+            display: {
+                label: 'Display state (label)',
+                widgetTypes: ['label'],
+                syncFrom: {
+                    platform: 'sensor',
+                    updateAction: 'lvgl.label.update',
+                    valueLambda: null,
+                    textFormat: 'return str_sprintf("%s", x.c_str());',
+                },
+            },
         },
         light: {
             toggle: {
-                label: 'Toggle (switch)',
-                widgetTypes: ['switch'],
+                label: 'Toggle (switch/button)',
+                widgetTypes: ['switch', 'button', 'checkbox', 'obj'],
                 syncFrom: {
                     platform: 'binary_sensor',
                     updateAction: 'lvgl.widget.update',
@@ -88,8 +98,8 @@ const EntityBinding = (() => {
                 },
             },
             brightness: {
-                label: 'Brightness (slider)',
-                widgetTypes: ['slider', 'arc'],
+                label: 'Brightness (slider/arc)',
+                widgetTypes: ['slider', 'arc', 'bar'],
                 syncFrom: {
                     platform: 'sensor',
                     attribute: 'brightness',
@@ -104,7 +114,7 @@ const EntityBinding = (() => {
                 widgetDefaults: { min_value: 0, max_value: 100, value: 0 },
             },
             color_temp: {
-                label: 'Color Temp (slider)',
+                label: 'Color Temp (slider/arc)',
                 widgetTypes: ['slider', 'arc'],
                 syncFrom: {
                     platform: 'sensor',
@@ -119,11 +129,21 @@ const EntityBinding = (() => {
                 },
                 widgetDefaults: { min_value: 153, max_value: 500, value: 250 },
             },
+            display: {
+                label: 'Display state (label)',
+                widgetTypes: ['label'],
+                syncFrom: {
+                    platform: 'sensor',
+                    updateAction: 'lvgl.label.update',
+                    valueLambda: null,
+                    textFormat: 'return str_sprintf("%s", x.c_str());',
+                },
+            },
         },
         switch: {
             toggle: {
-                label: 'Toggle (switch)',
-                widgetTypes: ['switch'],
+                label: 'Toggle',
+                widgetTypes: ['switch', 'button', 'checkbox', 'obj'],
                 syncFrom: {
                     platform: 'binary_sensor',
                     updateAction: 'lvgl.widget.update',
@@ -136,11 +156,20 @@ const EntityBinding = (() => {
                     conditional: true,
                 },
             },
+            display: {
+                label: 'Display state (label/LED)',
+                widgetTypes: ['label', 'led'],
+                syncFrom: {
+                    platform: 'binary_sensor',
+                    updateAction: 'lvgl.widget.update',
+                    stateMapping: 'state',
+                },
+            },
         },
         fan: {
             toggle: {
-                label: 'Toggle (switch)',
-                widgetTypes: ['switch'],
+                label: 'Toggle',
+                widgetTypes: ['switch', 'button', 'checkbox', 'obj'],
                 syncFrom: {
                     platform: 'binary_sensor',
                     updateAction: 'lvgl.widget.update',
@@ -154,8 +183,8 @@ const EntityBinding = (() => {
                 },
             },
             speed: {
-                label: 'Speed (slider)',
-                widgetTypes: ['slider', 'arc'],
+                label: 'Speed (slider/arc)',
+                widgetTypes: ['slider', 'arc', 'bar'],
                 syncFrom: {
                     platform: 'sensor',
                     attribute: 'percentage',
@@ -187,6 +216,16 @@ const EntityBinding = (() => {
                 },
                 widgetDefaults: { min_value: 60, max_value: 90, value: 72 },
             },
+            display: {
+                label: 'Display state (label)',
+                widgetTypes: ['label'],
+                syncFrom: {
+                    platform: 'sensor',
+                    updateAction: 'lvgl.label.update',
+                    valueLambda: null,
+                    textFormat: 'return str_sprintf("%.1f°", x);',
+                },
+            },
         },
         sensor: {
             display: {
@@ -195,13 +234,13 @@ const EntityBinding = (() => {
                 syncFrom: {
                     platform: 'sensor',
                     updateAction: 'lvgl.label.update',
-                    valueLambda: null,  // uses text format
+                    valueLambda: null,
                     textFormat: 'return str_sprintf("%.1f %s", x, id(${sensorId}).get_unit_of_measurement().c_str());',
                 },
             },
             bar: {
                 label: 'Level bar',
-                widgetTypes: ['bar'],
+                widgetTypes: ['bar', 'slider', 'arc'],
                 syncFrom: {
                     platform: 'sensor',
                     updateAction: 'lvgl.bar.update',
@@ -210,9 +249,70 @@ const EntityBinding = (() => {
                 widgetDefaults: { min_value: 0, max_value: 100, value: 0 },
             },
         },
+        binary_sensor: {
+            display: {
+                label: 'Display state (label/LED)',
+                widgetTypes: ['label', 'led', 'switch', 'checkbox', 'obj'],
+                syncFrom: {
+                    platform: 'binary_sensor',
+                    updateAction: 'lvgl.widget.update',
+                    stateMapping: 'state',
+                },
+            },
+        },
+        button: {
+            press: {
+                label: 'Trigger (button)',
+                widgetTypes: ['button', 'obj', 'label', 'image'],
+                syncTo: {
+                    event: 'on_press',
+                    haAction: 'button.press',
+                    dataTemplate: {},
+                },
+            },
+        },
+        scene: {
+            activate: {
+                label: 'Activate (button)',
+                widgetTypes: ['button', 'obj', 'label', 'image'],
+                syncTo: {
+                    event: 'on_press',
+                    haAction: 'scene.turn_on',
+                    dataTemplate: {},
+                },
+            },
+        },
+        script: {
+            run: {
+                label: 'Run script (button)',
+                widgetTypes: ['button', 'obj', 'label', 'image'],
+                syncTo: {
+                    event: 'on_press',
+                    haAction: 'script.turn_on',
+                    dataTemplate: {},
+                },
+            },
+        },
+        lock: {
+            toggle: {
+                label: 'Lock/Unlock',
+                widgetTypes: ['switch', 'button', 'checkbox', 'obj'],
+                syncFrom: {
+                    platform: 'binary_sensor',
+                    updateAction: 'lvgl.widget.update',
+                    stateMapping: 'state',
+                },
+                syncTo: {
+                    event: 'on_value_change',
+                    haActionOn: 'lock.lock',
+                    haActionOff: 'lock.unlock',
+                    conditional: true,
+                },
+            },
+        },
         media_player: {
             volume: {
-                label: 'Volume (slider)',
+                label: 'Volume (slider/arc)',
                 widgetTypes: ['slider', 'arc'],
                 syncFrom: {
                     platform: 'sensor',
@@ -229,7 +329,7 @@ const EntityBinding = (() => {
             },
             play_pause: {
                 label: 'Play/Pause (button)',
-                widgetTypes: ['button'],
+                widgetTypes: ['button', 'obj', 'label', 'image'],
                 syncTo: {
                     event: 'on_press',
                     haAction: 'media_player.media_play_pause',
@@ -237,10 +337,36 @@ const EntityBinding = (() => {
                 },
             },
         },
+        automation: {
+            trigger: {
+                label: 'Trigger (button)',
+                widgetTypes: ['button', 'obj', 'label', 'image'],
+                syncTo: {
+                    event: 'on_press',
+                    haAction: 'automation.trigger',
+                    dataTemplate: {},
+                },
+            },
+            toggle: {
+                label: 'Enable/Disable',
+                widgetTypes: ['switch', 'button', 'checkbox'],
+                syncFrom: {
+                    platform: 'binary_sensor',
+                    updateAction: 'lvgl.widget.update',
+                    stateMapping: 'state',
+                },
+                syncTo: {
+                    event: 'on_value_change',
+                    haActionOn: 'automation.turn_on',
+                    haActionOff: 'automation.turn_off',
+                    conditional: true,
+                },
+            },
+        },
         input_boolean: {
             toggle: {
-                label: 'Toggle (switch)',
-                widgetTypes: ['switch', 'checkbox'],
+                label: 'Toggle',
+                widgetTypes: ['switch', 'checkbox', 'button', 'obj'],
                 syncFrom: {
                     platform: 'binary_sensor',
                     updateAction: 'lvgl.widget.update',
@@ -256,8 +382,8 @@ const EntityBinding = (() => {
         },
         input_number: {
             value: {
-                label: 'Value (slider)',
-                widgetTypes: ['slider', 'arc', 'spinbox'],
+                label: 'Value (slider/arc)',
+                widgetTypes: ['slider', 'arc', 'spinbox', 'bar'],
                 syncFrom: {
                     platform: 'sensor',
                     updateAction: 'lvgl.slider.update',
@@ -267,6 +393,56 @@ const EntityBinding = (() => {
                     event: 'on_release',
                     haAction: 'input_number.set_value',
                     dataTemplate: { value: '__LAMBDA__return (int)x;' },
+                },
+            },
+            display: {
+                label: 'Display value (label)',
+                widgetTypes: ['label'],
+                syncFrom: {
+                    platform: 'sensor',
+                    updateAction: 'lvgl.label.update',
+                    valueLambda: null,
+                    textFormat: 'return str_sprintf("%.1f", x);',
+                },
+            },
+        },
+        input_select: {
+            display: {
+                label: 'Display value (label)',
+                widgetTypes: ['label', 'dropdown', 'roller'],
+                syncFrom: {
+                    platform: 'sensor',
+                    updateAction: 'lvgl.label.update',
+                    valueLambda: null,
+                    textFormat: 'return str_sprintf("%s", x.c_str());',
+                },
+            },
+        },
+        number: {
+            value: {
+                label: 'Value (slider/arc)',
+                widgetTypes: ['slider', 'arc', 'spinbox', 'bar'],
+                syncFrom: {
+                    platform: 'sensor',
+                    updateAction: 'lvgl.slider.update',
+                    valueLambda: 'return (int)x;',
+                },
+                syncTo: {
+                    event: 'on_release',
+                    haAction: 'number.set_value',
+                    dataTemplate: { value: '__LAMBDA__return (int)x;' },
+                },
+            },
+        },
+        select: {
+            display: {
+                label: 'Display value (label)',
+                widgetTypes: ['label', 'dropdown', 'roller'],
+                syncFrom: {
+                    platform: 'sensor',
+                    updateAction: 'lvgl.label.update',
+                    valueLambda: null,
+                    textFormat: 'return str_sprintf("%s", x.c_str());',
                 },
             },
         },
