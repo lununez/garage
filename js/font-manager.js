@@ -156,24 +156,49 @@ const FontManager = (() => {
                             const blobUrl = URL.createObjectURL(blob);
                             const ext = f.file.split('.').pop().toLowerCase();
                             const format = ext === 'otf' ? 'opentype' : 'truetype';
-                            const style = document.createElement('style');
-                            style.textContent = `@font-face { font-family: '${familyName}'; src: url('${blobUrl}') format('${format}'); font-display: swap; }`;
-                            document.head.appendChild(style);
-                            console.log(`Loaded remote font: ${familyName} from ${f.file}`);
-                            // Re-render after font loads so glyphs display correctly
-                            for (const cb of onChangeCallbacks) cb(projectFonts);
+                            // Use FontFace API for reliable cross-browser loading (especially Chrome).
+                            // Chrome needs explicit font loading before it will render PUA codepoints.
+                            const fontFace = new FontFace(familyName, `url('${blobUrl}') format('${format}')`, {
+                                display: 'swap',
+                                // MDI icons live in Supplementary PUA-A (U+F0000-U+FFFFF)
+                                unicodeRange: 'U+0000-FFFF, U+F0000-FFFFF',
+                            });
+                            fontFace.load().then(loaded => {
+                                document.fonts.add(loaded);
+                                console.log(`Loaded remote font: ${familyName} (${blob.size} bytes)`);
+                                // Re-render after font is ready
+                                for (const cb of onChangeCallbacks) cb(projectFonts);
+                            }).catch(err => {
+                                console.warn(`FontFace load failed for ${familyName}: ${err.message}, using @font-face fallback`);
+                                const style = document.createElement('style');
+                                style.textContent = `@font-face { font-family: '${familyName}'; src: url('${blobUrl}') format('${format}'); font-display: swap; unicode-range: U+0000-FFFF, U+F0000-FFFFF; }`;
+                                document.head.appendChild(style);
+                                setTimeout(() => {
+                                    for (const cb of onChangeCallbacks) cb(projectFonts);
+                                }, 1000);
+                            });
                         })
                         .catch(err => {
                             console.warn(`Failed to fetch remote font ${familyName}: ${err.message}. Trying direct @font-face URL.`);
                             const ext = f.file.split('.').pop().toLowerCase();
                             const format = ext === 'otf' ? 'opentype' : 'truetype';
                             const style = document.createElement('style');
-                            style.textContent = `@font-face { font-family: '${familyName}'; src: url('${f.file}') format('${format}'); font-display: swap; }`;
+                            style.textContent = `@font-face { font-family: '${familyName}'; src: url('${f.file}') format('${format}'); font-display: swap; unicode-range: U+0000-FFFF, U+F0000-FFFFF; }`;
                             document.head.appendChild(style);
-                            // Also re-render — the browser may still load the font via direct URL
-                            setTimeout(() => {
-                                for (const cb of onChangeCallbacks) cb(projectFonts);
-                            }, 2000);
+                            // Wait for browser to load the font, then re-render
+                            if (document.fonts && document.fonts.load) {
+                                document.fonts.load(`24px '${familyName}'`).then(() => {
+                                    for (const cb of onChangeCallbacks) cb(projectFonts);
+                                }).catch(() => {
+                                    setTimeout(() => {
+                                        for (const cb of onChangeCallbacks) cb(projectFonts);
+                                    }, 2000);
+                                });
+                            } else {
+                                setTimeout(() => {
+                                    for (const cb of onChangeCallbacks) cb(projectFonts);
+                                }, 2000);
+                            }
                         });
                 }
                 f.family = familyName;
