@@ -609,6 +609,27 @@ label {
 .tree-node-children {
     padding-left: 16px;
 }
+.tree-node-header.dragging {
+    opacity: 0.4;
+}
+.tree-node-header.drop-before {
+    border-top: 2px solid var(--accent, #4fc3f7);
+    margin-top: -2px;
+}
+.tree-node-header.drop-after {
+    border-bottom: 2px solid var(--accent, #4fc3f7);
+    margin-bottom: -2px;
+}
+.tree-node-header.drop-inside {
+    outline: 2px dashed var(--accent, #4fc3f7);
+    background: rgba(79, 195, 247, 0.1);
+}
+.tree-node-header[draggable="true"] {
+    cursor: grab;
+}
+.tree-node-header[draggable="true"]:active {
+    cursor: grabbing;
+}
 
 /* ---- Canvas Widgets ---- */
 .canvas-widget {

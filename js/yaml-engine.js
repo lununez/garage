@@ -1066,6 +1066,42 @@ const YAMLEngine = (() => {
         URL.revokeObjectURL(url);
     }
 
+    // ---- Widget-to-YAML Navigation ----
+    function scrollToWidget(widgetId) {
+        if (!codeMirrorEditor) return;
+        const content = codeMirrorEditor.getValue();
+        const lines = content.split('\n');
+        // Search for "id: <widgetId>" in the YAML
+        const idPattern = new RegExp(`^\\s+id:\\s+${widgetId}\\s*$`);
+        for (let i = 0; i < lines.length; i++) {
+            if (idPattern.test(lines[i])) {
+                // Find the widget type line above (the parent key like "- button:" or "- slider:")
+                let targetLine = i;
+                for (let j = i - 1; j >= 0; j--) {
+                    if (/^\s+-\s+\w+:/.test(lines[j]) || /^\s+\w+:$/.test(lines[j])) {
+                        targetLine = j;
+                        break;
+                    }
+                }
+                // Scroll to the line and highlight it
+                codeMirrorEditor.scrollIntoView({ line: targetLine, ch: 0 }, 100);
+                codeMirrorEditor.setCursor({ line: targetLine, ch: 0 });
+                codeMirrorEditor.setSelection(
+                    { line: targetLine, ch: 0 },
+                    { line: i, ch: lines[i].length }
+                );
+                codeMirrorEditor.focus();
+                // Ensure YAML panel is visible
+                const yamlPanel = document.getElementById('yaml-panel');
+                if (yamlPanel && yamlPanel.classList.contains('collapsed')) {
+                    const toggleBtn = document.getElementById('btn-yaml-toggle');
+                    if (toggleBtn) toggleBtn.click();
+                }
+                return;
+            }
+        }
+    }
+
     // ---- Public API ----
     return {
         init,
@@ -1080,6 +1116,7 @@ const YAMLEngine = (() => {
         formatEditor,
         exportYAML,
         exportFullYAML,
+        scrollToWidget,
         LAMBDA_SENTINEL,
     };
 })();

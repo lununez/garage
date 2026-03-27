@@ -1120,20 +1120,27 @@ const Designer = (() => {
     }
 
     // ---- Widget Tree ----
+    let draggedWidgetId = null;
+    let dragOverNodeEl = null;
+    let dropPosition = null; // 'before', 'after', or 'inside'
+
     function renderWidgetTree() {
         if (!widgetTreeEl) return;
         const page = getCurrentPage();
         widgetTreeEl.innerHTML = '';
-        renderTreeNodes(page.widgets, widgetTreeEl);
+        renderTreeNodes(page.widgets, widgetTreeEl, page.widgets);
     }
 
-    function renderTreeNodes(widgets, parentEl) {
-        for (const widget of widgets) {
+    function renderTreeNodes(widgets, parentEl, parentArray) {
+        for (let idx = 0; idx < widgets.length; idx++) {
+            const widget = widgets[idx];
             const node = document.createElement('div');
             node.className = 'tree-node';
+            node.dataset.widgetId = widget.id;
 
             const header = document.createElement('div');
             header.className = `tree-node-header ${widget.id === state.selectedWidgetId ? 'selected' : ''}`;
+            header.draggable = true;
 
             const toggle = document.createElement('span');
             toggle.className = 'tree-node-toggle';
@@ -1157,9 +1164,94 @@ const Designer = (() => {
             header.appendChild(label);
             header.appendChild(type);
 
+            // Drag-and-drop handlers
+            header.addEventListener('dragstart', (e) => {
+                draggedWidgetId = widget.id;
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', widget.id);
+                header.classList.add('dragging');
+                setTimeout(() => header.style.opacity = '0.4', 0);
+            });
+
+            header.addEventListener('dragend', () => {
+                header.style.opacity = '';
+                header.classList.remove('dragging');
+                clearDropIndicators();
+                draggedWidgetId = null;
+                dragOverNodeEl = null;
+                dropPosition = null;
+            });
+
+            header.addEventListener('dragover', (e) => {
+                if (!draggedWidgetId || draggedWidgetId === widget.id) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+
+                const rect = header.getBoundingClientRect();
+                const y = e.clientY - rect.top;
+                const height = rect.height;
+
+                clearDropIndicators();
+
+                const canHaveChildren = def && def.canContain;
+                if (canHaveChildren && y > height * 0.25 && y < height * 0.75) {
+                    dropPosition = 'inside';
+                    header.classList.add('drop-inside');
+                } else if (y < height / 2) {
+                    dropPosition = 'before';
+                    header.classList.add('drop-before');
+                } else {
+                    dropPosition = 'after';
+                    header.classList.add('drop-after');
+                }
+                dragOverNodeEl = header;
+            });
+
+            header.addEventListener('dragleave', () => {
+                header.classList.remove('drop-before', 'drop-after', 'drop-inside');
+            });
+
+            header.addEventListener('drop', (e) => {
+                e.preventDefault();
+                if (!draggedWidgetId || draggedWidgetId === widget.id) return;
+
+                const page = getCurrentPage();
+                // Check we're not dropping a parent into its own child
+                if (isDescendant(draggedWidgetId, widget.id, page.widgets)) return;
+
+                pushUndo();
+
+                // Remove the dragged widget from its current location
+                const draggedWidget = findWidgetById(draggedWidgetId, page.widgets);
+                if (!draggedWidget) return;
+                removeWidgetFromTree(draggedWidgetId, page.widgets);
+
+                // Find the target widget's parent array and index
+                const targetInfo = findWidgetParentArray(widget.id, page.widgets);
+                if (!targetInfo) return;
+
+                if (dropPosition === 'inside') {
+                    if (!widget.children) widget.children = [];
+                    widget.children.push(draggedWidget);
+                } else if (dropPosition === 'before') {
+                    targetInfo.array.splice(targetInfo.index, 0, draggedWidget);
+                } else {
+                    targetInfo.array.splice(targetInfo.index + 1, 0, draggedWidget);
+                }
+
+                clearDropIndicators();
+                draggedWidgetId = null;
+                renderAll();
+                notifyChange();
+            });
+
             header.addEventListener('click', () => {
                 state.selectedWidgetId = widget.id;
                 renderAll();
+                // Navigate YAML editor to this widget
+                if (typeof YAMLEngine !== 'undefined' && YAMLEngine.scrollToWidget) {
+                    YAMLEngine.scrollToWidget(widget.id);
+                }
             });
 
             node.appendChild(header);
@@ -1167,12 +1259,42 @@ const Designer = (() => {
             if (widget.children && widget.children.length > 0) {
                 const childrenEl = document.createElement('div');
                 childrenEl.className = 'tree-node-children';
-                renderTreeNodes(widget.children, childrenEl);
+                renderTreeNodes(widget.children, childrenEl, widget.children);
                 node.appendChild(childrenEl);
             }
 
             parentEl.appendChild(node);
         }
+    }
+
+    function clearDropIndicators() {
+        if (!widgetTreeEl) return;
+        widgetTreeEl.querySelectorAll('.drop-before, .drop-after, .drop-inside').forEach(el => {
+            el.classList.remove('drop-before', 'drop-after', 'drop-inside');
+        });
+    }
+
+    function isDescendant(parentId, childId, widgets) {
+        const parent = findWidgetById(parentId, widgets);
+        if (!parent || !parent.children) return false;
+        for (const c of parent.children) {
+            if (c.id === childId) return true;
+            if (c.children && isDescendant(c.id, childId, [c])) return true;
+        }
+        return false;
+    }
+
+    function findWidgetParentArray(widgetId, widgets) {
+        for (let i = 0; i < widgets.length; i++) {
+            if (widgets[i].id === widgetId) {
+                return { array: widgets, index: i };
+            }
+            if (widgets[i].children) {
+                const found = findWidgetParentArray(widgetId, widgets[i].children);
+                if (found) return found;
+            }
+        }
+        return null;
     }
 
     // ---- State Change Notification ----
@@ -1251,5 +1373,6 @@ const Designer = (() => {
         renderAll,
         get selectedWidgetId() { return state.selectedWidgetId; },
         set selectedWidgetId(id) { state.selectedWidgetId = id; renderAll(); },
+        findWidgetParentArray,
     };
 })();
