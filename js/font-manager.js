@@ -156,22 +156,27 @@ const FontManager = (() => {
                             const blobUrl = URL.createObjectURL(blob);
                             const ext = f.file.split('.').pop().toLowerCase();
                             const format = ext === 'otf' ? 'opentype' : 'truetype';
-                            // Use FontFace API for reliable cross-browser loading (especially Chrome).
-                            // Chrome needs explicit font loading before it will render PUA codepoints.
+                            // Use FontFace API for reliable cross-browser loading.
+                            // Do NOT set unicodeRange — Chrome doesn't handle supplementary
+                            // plane characters (U+F0000+) properly with unicode-range restrictions.
                             const fontFace = new FontFace(familyName, `url('${blobUrl}') format('${format}')`, {
                                 display: 'swap',
-                                // MDI icons live in Supplementary PUA-A (U+F0000-U+FFFFF)
-                                unicodeRange: 'U+0000-FFFF, U+F0000-FFFFF',
                             });
                             fontFace.load().then(loaded => {
                                 document.fonts.add(loaded);
                                 console.log(`Loaded remote font: ${familyName} (${blob.size} bytes)`);
-                                // Re-render after font is ready
+                                // Wait for browser to fully register the font, then re-render
+                                return document.fonts.ready;
+                            }).then(() => {
                                 for (const cb of onChangeCallbacks) cb(projectFonts);
+                                // Double re-render after a short delay for Chrome stragglers
+                                setTimeout(() => {
+                                    for (const cb of onChangeCallbacks) cb(projectFonts);
+                                }, 500);
                             }).catch(err => {
                                 console.warn(`FontFace load failed for ${familyName}: ${err.message}, using @font-face fallback`);
                                 const style = document.createElement('style');
-                                style.textContent = `@font-face { font-family: '${familyName}'; src: url('${blobUrl}') format('${format}'); font-display: swap; unicode-range: U+0000-FFFF, U+F0000-FFFFF; }`;
+                                style.textContent = `@font-face { font-family: '${familyName}'; src: url('${blobUrl}') format('${format}'); font-display: swap; }`;
                                 document.head.appendChild(style);
                                 setTimeout(() => {
                                     for (const cb of onChangeCallbacks) cb(projectFonts);
@@ -183,7 +188,7 @@ const FontManager = (() => {
                             const ext = f.file.split('.').pop().toLowerCase();
                             const format = ext === 'otf' ? 'opentype' : 'truetype';
                             const style = document.createElement('style');
-                            style.textContent = `@font-face { font-family: '${familyName}'; src: url('${f.file}') format('${format}'); font-display: swap; unicode-range: U+0000-FFFF, U+F0000-FFFFF; }`;
+                            style.textContent = `@font-face { font-family: '${familyName}'; src: url('${f.file}') format('${format}'); font-display: swap; }`;
                             document.head.appendChild(style);
                             // Wait for browser to load the font, then re-render
                             if (document.fonts && document.fonts.load) {

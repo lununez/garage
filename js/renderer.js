@@ -243,9 +243,25 @@ const LVGLRenderer = (() => {
             const codeHex = match[1] || match[2];
             const codePoint = parseInt(codeHex, 16);
 
-            // Decode the character natively.
-            // The widget's font-family (assigned via applyStyles) will handle drawing it.
-            el.appendChild(document.createTextNode(String.fromCodePoint(codePoint)));
+            // For supplementary plane codepoints (MDI icons at U+F0000+), wrap in a span
+            // with explicit font-family to help Chrome render them correctly.
+            const charStr = String.fromCodePoint(codePoint);
+            if (codePoint > 0xFFFF) {
+                const iconSpan = document.createElement('span');
+                iconSpan.textContent = charStr;
+                iconSpan.style.fontFamily = 'inherit';
+                // Force Chrome to not use fallback by marking as icon
+                iconSpan.style.display = 'inline-block';
+                iconSpan.style.fontStyle = 'normal';
+                iconSpan.style.fontVariant = 'normal';
+                iconSpan.style.textRendering = 'auto';
+                iconSpan.style.lineHeight = '1';
+                iconSpan.style.webkitFontSmoothing = 'antialiased';
+                iconSpan.className = 'mdi-glyph';
+                el.appendChild(iconSpan);
+            } else {
+                el.appendChild(document.createTextNode(charStr));
+            }
 
             lastIdx = match.index + match[0].length;
         }
@@ -357,60 +373,81 @@ const LVGLRenderer = (() => {
             }
             track.appendChild(indicator);
 
-            // Knob - rendered natively from part styles
+            // Knob - rendered to match LVGL behavior:
+            // - Default size = track cross-axis size
+            // - Padding EXPANDS the knob (pad_all adds to each side)
+            // - Radius controls corner rounding
+            // - bg_color, bg_opa, border, shadow all apply
             const knob = document.createElement('div');
             knob.className = 'lvgl-slider-knob';
             knob.style.position = 'absolute';
             knob.style.zIndex = '2';
 
-            // Native explicit sizing from knob part styles, falling back to dynamic size
-            const kw = widget.styles?.knob?.width;
-            const kh = widget.styles?.knob?.height;
-            const defaultSize = vertical ? widget.width + 6 : widget.height + 6;
+            const ks = widget.styles?.knob || {};
+            // In LVGL, the default knob size equals the track cross-axis dimension
+            const crossSize = vertical ? widget.width : widget.height;
+            const baseSize = crossSize;
 
-            knob.style.width = (kw !== undefined ? kw + 'px' : defaultSize + 'px');
-            knob.style.height = (kh !== undefined ? kh + 'px' : defaultSize + 'px');
+            // Explicit size from knob style, or use base
+            let knobW = ks.width != null ? parseInt(ks.width) : baseSize;
+            let knobH = ks.height != null ? parseInt(ks.height) : baseSize;
 
-            // Default styles before applying custom ones
-            knob.style.borderRadius = '50%';
+            // LVGL padding on knob EXPANDS the knob dimensions
+            // pad_all adds to all four sides, individual pads add to their side
+            const padAll = ks.pad_all != null ? parseInt(ks.pad_all) : 0;
+            const padL = ks.pad_left != null ? parseInt(ks.pad_left) : padAll;
+            const padR = ks.pad_right != null ? parseInt(ks.pad_right) : padAll;
+            const padT = ks.pad_top != null ? parseInt(ks.pad_top) : padAll;
+            const padB = ks.pad_bottom != null ? parseInt(ks.pad_bottom) : padAll;
+
+            knobW += padL + padR;
+            knobH += padT + padB;
+
+            knob.style.width = Math.max(0, knobW) + 'px';
+            knob.style.height = Math.max(0, knobH) + 'px';
+
+            // Default knob appearance
             knob.style.background = '#fff';
             knob.style.boxShadow = '0 1px 4px rgba(0,0,0,0.4)';
 
-            applyStyles(knob, widget.styles?.knob);
+            // LVGL default knob radius = 50% (fully round)
+            // Apply custom radius if set, otherwise default to round
+            if (ks.radius != null) {
+                knob.style.borderRadius = ks.radius === 0x7FFF ? '50%' : ks.radius + 'px';
+            } else {
+                knob.style.borderRadius = '50%';
+            }
+
+            // Apply knob styles (bg_color, border, shadow, etc.) but NOT padding/radius
+            // since we handled those specially above
+            const knobStyleCopy = { ...ks };
+            delete knobStyleCopy.pad_all;
+            delete knobStyleCopy.pad_left;
+            delete knobStyleCopy.pad_right;
+            delete knobStyleCopy.pad_top;
+            delete knobStyleCopy.pad_bottom;
+            delete knobStyleCopy.radius;
+            delete knobStyleCopy.width;
+            delete knobStyleCopy.height;
+            applyStyles(knob, knobStyleCopy);
+
+            // Clear any CSS padding that applyStyles might have set
+            knob.style.padding = '0';
 
             // Hide entirely if user sets transparency
-            const knobOpa = parseOpacity(widget.styles?.knob?.bg_opa);
+            const knobOpa = parseOpacity(ks.bg_opa);
             if (knobOpa === 0) {
                 knob.style.display = 'none';
             }
 
-            // Apply padding to adjust knob size (LVGL uses negative padding to shrink)
-            if (widget.styles?.knob) {
-                const ks = widget.styles.knob;
-                let knobW = parseFloat(knob.style.width) || defaultSize;
-                let knobH = parseFloat(knob.style.height) || defaultSize;
-                if (ks.pad_all != null) {
-                    knobW += parseInt(ks.pad_all) * 2;
-                    knobH += parseInt(ks.pad_all) * 2;
-                }
-                if (ks.pad_left != null) knobW += parseInt(ks.pad_left);
-                if (ks.pad_right != null) knobW += parseInt(ks.pad_right);
-                if (ks.pad_top != null) knobH += parseInt(ks.pad_top);
-                if (ks.pad_bottom != null) knobH += parseInt(ks.pad_bottom);
-                knob.style.width = Math.max(0, knobW) + 'px';
-                knob.style.height = Math.max(0, knobH) + 'px';
-            }
-
-            // Position knob centered on the track
+            // Position knob centered on the indicator endpoint
             if (vertical) {
-                const knobH = parseFloat(knob.style.height) || 20;
                 const trackH = widget.height;
                 const knobPos = trackH - (pct / 100 * trackH) - knobH / 2;
                 knob.style.top = knobPos + 'px';
                 knob.style.left = '50%';
                 knob.style.transform = 'translateX(-50%)';
             } else {
-                const knobW = parseFloat(knob.style.width) || 20;
                 const trackW = widget.width;
                 const knobPos = (pct / 100 * trackW) - knobW / 2;
                 knob.style.left = knobPos + 'px';
@@ -484,15 +521,38 @@ const LVGLRenderer = (() => {
                 svg.appendChild(indPath);
             }
 
-            // Knob
+            // Knob - LVGL: knob size = arc_width by default, padding expands it
+            const ks = widget.styles?.knob || {};
             const knobPos = polarToCartesian(cx, cy, r, valAngle);
-            const knobR = arcWidth * 0.7;
-            const knobCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-            knobCircle.setAttribute('cx', knobPos.x);
-            knobCircle.setAttribute('cy', knobPos.y);
-            knobCircle.setAttribute('r', knobR);
-            knobCircle.setAttribute('fill', parseColor(widget.styles?.knob?.bg_color) || '#fff');
-            svg.appendChild(knobCircle);
+            const baseKnobSize = ks.width != null ? parseInt(ks.width) : arcWidth;
+            const padAll = ks.pad_all != null ? parseInt(ks.pad_all) : 0;
+            const padL = ks.pad_left != null ? parseInt(ks.pad_left) : padAll;
+            const padR = ks.pad_right != null ? parseInt(ks.pad_right) : padAll;
+            const padT = ks.pad_top != null ? parseInt(ks.pad_top) : padAll;
+            const padB = ks.pad_bottom != null ? parseInt(ks.pad_bottom) : padAll;
+            const knobW = baseKnobSize + padL + padR;
+            const knobH = (ks.height != null ? parseInt(ks.height) : baseKnobSize) + padT + padB;
+            const knobRadius = ks.radius != null ? parseInt(ks.radius) : Math.max(knobW, knobH) / 2;
+            const isCircle = knobRadius >= Math.max(knobW, knobH) / 2;
+
+            if (isCircle) {
+                const knobCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                knobCircle.setAttribute('cx', knobPos.x);
+                knobCircle.setAttribute('cy', knobPos.y);
+                knobCircle.setAttribute('r', Math.max(knobW, knobH) / 2);
+                knobCircle.setAttribute('fill', parseColor(ks.bg_color) || '#fff');
+                svg.appendChild(knobCircle);
+            } else {
+                const knobRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                knobRect.setAttribute('x', knobPos.x - knobW / 2);
+                knobRect.setAttribute('y', knobPos.y - knobH / 2);
+                knobRect.setAttribute('width', knobW);
+                knobRect.setAttribute('height', knobH);
+                knobRect.setAttribute('rx', knobRadius);
+                knobRect.setAttribute('ry', knobRadius);
+                knobRect.setAttribute('fill', parseColor(ks.bg_color) || '#fff');
+                svg.appendChild(knobRect);
+            }
 
             el.appendChild(svg);
             return el;
@@ -531,11 +591,33 @@ const LVGLRenderer = (() => {
 
             const knob = document.createElement('div');
             knob.className = 'lvgl-switch-knob';
-            const knobSize = widget.height - 4;
-            knob.style.width = knobSize + 'px';
-            knob.style.height = knobSize + 'px';
-            knob.style.left = checked ? (widget.width - knobSize - 2) + 'px' : '2px';
-            applyStyles(knob, widget.styles?.knob);
+            const ks = widget.styles?.knob || {};
+            // LVGL: switch knob size = height - 2*pad of main, padding expands knob
+            const mainPad = parseInt(widget.styles?.main?.pad_all || 2);
+            let knobBase = widget.height - mainPad * 2;
+            const padAll = ks.pad_all != null ? parseInt(ks.pad_all) : 0;
+            const padL = ks.pad_left != null ? parseInt(ks.pad_left) : padAll;
+            const padR = ks.pad_right != null ? parseInt(ks.pad_right) : padAll;
+            const padT = ks.pad_top != null ? parseInt(ks.pad_top) : padAll;
+            const padB = ks.pad_bottom != null ? parseInt(ks.pad_bottom) : padAll;
+            const knobW = (ks.width != null ? parseInt(ks.width) : knobBase) + padL + padR;
+            const knobH = (ks.height != null ? parseInt(ks.height) : knobBase) + padT + padB;
+            knob.style.width = knobW + 'px';
+            knob.style.height = knobH + 'px';
+            knob.style.top = ((widget.height - knobH) / 2) + 'px';
+            knob.style.left = checked ? (widget.width - knobW - mainPad) + 'px' : mainPad + 'px';
+            if (ks.radius != null) {
+                knob.style.borderRadius = parseInt(ks.radius) + 'px';
+            } else {
+                knob.style.borderRadius = '50%';
+            }
+            // Apply styles but exclude pad/radius/size to prevent conflicts
+            const knobStylesCopy = Object.assign({}, ks);
+            delete knobStylesCopy.pad_all; delete knobStylesCopy.pad_left; delete knobStylesCopy.pad_right;
+            delete knobStylesCopy.pad_top; delete knobStylesCopy.pad_bottom;
+            delete knobStylesCopy.radius; delete knobStylesCopy.width; delete knobStylesCopy.height;
+            applyStyles(knob, knobStylesCopy);
+            knob.style.padding = '0';
 
             el.appendChild(knob);
             return el;
