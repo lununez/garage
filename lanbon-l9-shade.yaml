@@ -76,8 +76,8 @@ display:
       height: 320
       width: 170
       offset_width: 35
-    invert_colors: false
-    color_order: RGB
+    invert_colors: true
+    color_order: BGR
     color_depth: 16BIT
     auto_clear_enabled: false
     update_interval: 250ms
