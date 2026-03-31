@@ -234,6 +234,8 @@ lvgl:
             bg_color: 0xFFAA44
             bg_opa: COVER
             radius: 15
+            pad_top: 5
+            pad_bottom: 5
             indicator:
               bg_color: 0xFFEECC
               bg_opa: COVER
