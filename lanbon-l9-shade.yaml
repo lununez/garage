@@ -239,10 +239,8 @@ lvgl:
               bg_opa: COVER
               radius: 15
             knob:
-              bg_color: 0xE59941
-              bg_opa: COVER
-              radius: 10
-              pad_all: -10
+              bg_opa: TRANSP
+              pad_all: 0
               pad_top: -50
               pad_bottom: -50
               pad_left: 0
