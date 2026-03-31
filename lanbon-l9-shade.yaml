@@ -76,7 +76,7 @@ display:
       height: 320
       width: 170
       offset_width: 35
-    invert_colors: true
+    invert_colors: false
     color_order: RGB
     color_depth: 16BIT
     auto_clear_enabled: false
@@ -213,17 +213,17 @@ lvgl:
             bg_opa: COVER
             border_width: 0
             radius: 0
-            widgets:
-              - label:
-                  id: label_718
-                  x: 44
-                  y: 15
-                  width: 79
-                  height: 42
-                  text: "Window\nShades"
-                  text_align: CENTER
-                  text_font: outfit_16
-                  text_color: 0xFFFFFF
+            pad_all: 0
+        - label:
+            id: label_718
+            x: 35
+            y: 10
+            width: 100
+            height: 42
+            text: "Window\nShades"
+            text_align: CENTER
+            text_font: outfit_16
+            text_color: 0xFFFFFF
         - slider:
             id: shade_slider
             x: 30
@@ -244,8 +244,8 @@ lvgl:
               radius: 15
               pad_top: -50
               pad_bottom: -50
-              pad_left: 8
-              pad_right: 8
+              pad_left: 0
+              pad_right: 0
             on_value:
               - lambda: 'id(last_send_ms) = millis();'
               - script.execute:
