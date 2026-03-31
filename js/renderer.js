@@ -10,6 +10,29 @@ const LVGLRenderer = (() => {
      * Parse a color value from various formats to a CSS color string.
      * Supports: 0xRRGGBB, #RRGGBB, CSS color names
      */
+    /**
+     * Get styles for a widget part, merging state-specific overrides.
+     * If the widget has a 'checked' property and it's true, merge CHECKED state styles.
+     * Returns a merged style object.
+     */
+    function getEffectiveStyles(widget, part) {
+        const partStyles = widget.styles?.[part];
+        if (!partStyles) return {};
+
+        // Start with default styles (exclude _states key)
+        const result = {};
+        for (const [k, v] of Object.entries(partStyles)) {
+            if (k !== '_states') result[k] = v;
+        }
+
+        // Merge checked state if widget is checked
+        if (widget.properties?.checked && partStyles._states?.checked) {
+            Object.assign(result, partStyles._states.checked);
+        }
+
+        return result;
+    }
+
     function parseColor(val) {
         if (val == null || val === '') return null;
         if (typeof val === 'string') {
@@ -303,8 +326,9 @@ const LVGLRenderer = (() => {
 
         button(widget) {
             const el = document.createElement('div');
-            el.className = 'lvgl-widget lvgl-button';
-            applyStyles(el, widget.styles?.main);
+            const isChecked = widget.properties.checkable && widget.properties.checked;
+            el.className = `lvgl-widget lvgl-button${isChecked ? ' checked' : ''}`;
+            applyStyles(el, getEffectiveStyles(widget, 'main'));
             // Render child label text inline (children are not rendered separately)
             if (widget.children && widget.children.length > 0) {
                 const childLabel = widget.children.find(c => c.type === 'label');
@@ -587,11 +611,11 @@ const LVGLRenderer = (() => {
             const el = document.createElement('div');
             const checked = widget.properties.checked;
             el.className = `lvgl-widget lvgl-switch ${checked ? 'checked' : ''}`;
-            applyStyles(el, widget.styles?.main);
+            applyStyles(el, getEffectiveStyles(widget, 'main'));
 
             const knob = document.createElement('div');
             knob.className = 'lvgl-switch-knob';
-            const ks = widget.styles?.knob || {};
+            const ks = getEffectiveStyles(widget, 'knob');
             // LVGL: switch knob size = height - 2*pad of main, padding expands knob
             const mainPad = parseInt(widget.styles?.main?.pad_all || 2);
             let knobBase = widget.height - mainPad * 2;
@@ -626,11 +650,11 @@ const LVGLRenderer = (() => {
         checkbox(widget) {
             const el = document.createElement('div');
             el.className = `lvgl-widget lvgl-checkbox ${widget.properties.checked ? 'checked' : ''}`;
-            applyStyles(el, widget.styles?.main);
+            applyStyles(el, getEffectiveStyles(widget, 'main'));
 
             const box = document.createElement('div');
             box.className = 'lvgl-checkbox-box';
-            applyStyles(box, widget.styles?.indicator);
+            applyStyles(box, getEffectiveStyles(widget, 'indicator'));
 
             const lbl = document.createElement('span');
             lbl.textContent = widget.properties.text || 'Checkbox';
@@ -932,7 +956,7 @@ const LVGLRenderer = (() => {
         buttonmatrix(widget) {
             const el = document.createElement('div');
             el.className = 'lvgl-widget lvgl-btnmatrix';
-            applyStyles(el, widget.styles?.main);
+            applyStyles(el, getEffectiveStyles(widget, 'main'));
 
             const rowsText = widget.properties.rows || 'A,B,C\n1,2,3';
             const rows = rowsText.split('\n').filter(r => r.trim());
@@ -940,15 +964,27 @@ const LVGLRenderer = (() => {
             el.style.gridTemplateColumns = `repeat(${maxCols}, 1fr)`;
             el.style.gridTemplateRows = `repeat(${rows.length}, 1fr)`;
 
+            const itemStyles = getEffectiveStyles(widget, 'items');
+            // Get checked state styles for items (used when one_checked is set)
+            const checkedItemStyles = widget.styles?.items?._states?.checked || {};
+            const checkedIdx = widget.properties.one_checked ? 0 : -1;
+
+            let btnIdx = 0;
             for (const row of rows) {
                 const btns = row.split(',').map(b => b.trim());
                 for (const btn of btns) {
                     const btnEl = document.createElement('div');
                     btnEl.className = 'lvgl-btnmatrix-btn';
                     btnEl.textContent = btn;
-                    // Apply items part styles (bg_color, radius, etc.)
-                    applyStyles(btnEl, widget.styles?.items);
+                    if (btnIdx === checkedIdx && Object.keys(checkedItemStyles).length > 0) {
+                        // Apply default styles then override with checked state
+                        const merged = { ...itemStyles, ...checkedItemStyles };
+                        applyStyles(btnEl, merged);
+                    } else {
+                        applyStyles(btnEl, itemStyles);
+                    }
                     el.appendChild(btnEl);
+                    btnIdx++;
                 }
             }
             return el;

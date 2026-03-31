@@ -835,7 +835,8 @@ const Designer = (() => {
                     : (partStyles._states?.[currentState.toLowerCase()] || {});
 
                 const baseProps = ['bg_color', 'bg_opa', 'radius', 'border_color', 'border_width',
-                                    'text_color', 'text_font', 'text_opa', 'text_letter_space',
+                                    'text_color', 'text_font', 'text_opa', 'text_align',
+                                    'text_letter_space', 'text_line_space',
                                     'opa', 'pad_all'];
                 for (const prop of baseProps) {
                     const propDef = LVGLWidgets.STYLE_PROPS[prop];
@@ -1206,7 +1207,25 @@ const Designer = (() => {
                 updateWidgetProperty(state.selectedWidgetId, key, val);
             };
             input.addEventListener('change', handler);
-            if (input.tagName === 'TEXTAREA') input.addEventListener('input', handler);
+            if (input.tagName === 'TEXTAREA') {
+                // Update canvas live but skip renderProperties to preserve focus
+                let debounceTimer = null;
+                input.addEventListener('input', (e) => {
+                    const key = e.target.dataset.widgetProp;
+                    const val = e.target.value;
+                    const page = getCurrentPage();
+                    const w = findWidgetById(state.selectedWidgetId, page.widgets);
+                    if (w) {
+                        w.properties[key] = val;
+                        clearTimeout(debounceTimer);
+                        debounceTimer = setTimeout(() => {
+                            renderCanvas();
+                            renderWidgetTree();
+                            notifyChange();
+                        }, 150);
+                    }
+                });
+            }
         });
 
         // Color picker sync
