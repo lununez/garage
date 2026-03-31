@@ -33,10 +33,20 @@ const DeviceManager = (() => {
     }
 
     function setConfig(dashboardUrl, deviceFile) {
-        config.dashboardUrl = (dashboardUrl || '').replace(/\/+$/, '');
+        let url = (dashboardUrl || '').replace(/\/+$/, '');
+
+        // Auto-convert HA frontend sidebar URLs to API ingress URLs.
+        // Sidebar URL:  http://homeassistant.local:8123/5c53de3b_esphome
+        // API endpoint:  http://homeassistant.local:8123/api/hassio_ingress/5c53de3b_esphome
+        const sidebarMatch = url.match(/^(https?:\/\/[^/]+)\/([a-f0-9]{8}_[^/]+)$/);
+        if (sidebarMatch && !url.includes('/api/hassio_ingress/')) {
+            url = `${sidebarMatch[1]}/api/hassio_ingress/${sidebarMatch[2]}`;
+        }
+
+        config.dashboardUrl = url;
         config.deviceFile = deviceFile || '';
-        // Auto-detect Ingress: if URL contains hassio_ingress, enable credentials
-        config.useIngress = /hassio_ingress|api\/hassio/.test(config.dashboardUrl);
+        // Detect Ingress: hassio_ingress in path OR addon slug pattern on HA port
+        config.useIngress = /hassio_ingress|api\/hassio|\/[a-f0-9]{8}_/.test(config.dashboardUrl);
         localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
     }
 
@@ -47,7 +57,7 @@ const DeviceManager = (() => {
             if (saved.deviceFile) config.deviceFile = saved.deviceFile;
             if (saved.useIngress) config.useIngress = saved.useIngress;
             // Re-detect ingress from URL
-            if (config.dashboardUrl && /hassio_ingress|api\/hassio/.test(config.dashboardUrl)) {
+            if (config.dashboardUrl && /hassio_ingress|api\/hassio|\/[a-f0-9]{8}_/.test(config.dashboardUrl)) {
                 config.useIngress = true;
             }
         } catch (e) { /* ignore */ }
@@ -90,8 +100,8 @@ const DeviceManager = (() => {
                   `3. The Ingress URL is correct (check ESPHome add-on info page)\n`
                 : `The ESPHome dashboard at "${config.dashboardUrl}" must be accessible from this browser.\n\n` +
                   `Solutions:\n` +
-                  `1. Copy designer files to HA's www/ folder and access via /local/lvgl-designer/\n` +
-                  `2. Set dashboard URL to the ESPHome Ingress URL from HA\n` +
+                  `1. Access this designer from HA: copy files to /config/www/lvgl-designer/ and open via http://homeassistant.local:8123/local/lvgl-designer/\n` +
+                  `2. Use the ESPHome direct URL (port 6052): http://homeassistant.local:6052\n` +
                   `3. Use "Export YAML" and paste into ESPHome dashboard manually\n`;
             throw new Error(
                 `Network error fetching device YAML.\n\n${ingressHint}\nOriginal error: ${e.message}`
