@@ -155,7 +155,7 @@ sensor:
           then:
             - lvgl.slider.update:
                 id: shade_slider
-                value: !lambda "return (int)x;"
+                value: !lambda "return 100 - (int)x;"
 
 binary_sensor:
   - platform: gpio
@@ -173,7 +173,7 @@ binary_sensor:
           then:
             - lvgl.slider.update:
                 id: shade_slider
-                value: !lambda "return (int)id(ha_shade_position).state;"
+                value: !lambda "return 100 - (int)id(ha_shade_position).state;"
     on_release:
       - light.turn_off: display_backlight
 
@@ -230,26 +230,22 @@ lvgl:
             y: 62
             width: 110
             height: 235
-            value: 100
-            bg_color: 0xFFAA44
+            value: 0
+            bg_color: 0xFFEECC
             bg_opa: COVER
             radius: 15
             indicator:
-              bg_color: 0xFFEECC
+              bg_color: 0xFFAA44
               bg_opa: COVER
               radius: 15
             knob:
               bg_opa: TRANSP
               pad_all: 0
-              pad_top: -50
-              pad_bottom: -50
-              pad_left: 0
-              pad_right: 0
             on_value:
               - lambda: 'id(last_send_ms) = millis();'
               - script.execute:
                   id: debounce_shade
-                  target_pos: !lambda "return (int)x;"
+                  target_pos: !lambda "return 100 - (int)x;"
         - button:
             id: up_button
             x: 30
@@ -267,7 +263,7 @@ lvgl:
                     entity_id: cover.right_window_shade
               - lvgl.slider.update:
                   id: shade_slider
-                  value: 100
+                  value: 0
             widgets:
               - label:
                   id: up_button_label
@@ -295,7 +291,7 @@ lvgl:
                     entity_id: cover.right_window_shade
               - lvgl.slider.update:
                   id: shade_slider
-                  value: 0
+                  value: 100
             widgets:
               - label:
                   id: down_button_label
