@@ -107,12 +107,9 @@ globals:
   - id: last_sent_ha_pos
     type: int
     initial_value: "-1"
-  - id: track_x
-    type: int
-    initial_value: "35"
-  - id: track_y
-    type: int
-    initial_value: "48"
+  - id: updating_from_ha
+    type: bool
+    initial_value: "false"
   - id: track_w
     type: int
     initial_value: "100"
@@ -151,11 +148,13 @@ sensor:
     on_value:
       - if:
           condition:
-            lambda: 'return (millis() - id(last_send_ms)) > 35000;'
+            lambda: 'return (millis() - id(last_send_ms)) > 2000;'
           then:
+            - lambda: 'id(updating_from_ha) = true;'
             - lvgl.slider.update:
                 id: shade_slider
                 value: !lambda "return 100 - (int)x;"
+            - lambda: 'id(updating_from_ha) = false;'
 
 binary_sensor:
   - platform: gpio
@@ -171,9 +170,11 @@ binary_sensor:
           condition:
             lambda: 'return id(ha_shade_position).has_state();'
           then:
+            - lambda: 'id(updating_from_ha) = true;'
             - lvgl.slider.update:
                 id: shade_slider
                 value: !lambda "return 100 - (int)id(ha_shade_position).state;"
+            - lambda: 'id(updating_from_ha) = false;'
     on_release:
       - light.turn_off: display_backlight
 
@@ -242,10 +243,14 @@ lvgl:
               bg_opa: TRANSP
               pad_all: 0
             on_value:
-              - lambda: 'id(last_send_ms) = millis();'
-              - script.execute:
-                  id: debounce_shade
-                  target_pos: !lambda "return 100 - (int)x;"
+              - if:
+                  condition:
+                    lambda: 'return !id(updating_from_ha);'
+                  then:
+                    - lambda: 'id(last_send_ms) = millis();'
+                    - script.execute:
+                        id: debounce_shade
+                        target_pos: !lambda "return 100 - (int)x;"
         - button:
             id: up_button
             x: 30
