@@ -95,27 +95,12 @@ touchscreen:
       y_max: 319
 
 globals:
-  - id: ui_pos_cache
-    type: int
-    initial_value: "0"
   - id: ha_pos_cache
     type: int
-    initial_value: "0"
+    initial_value: "-1"
   - id: last_send_ms
     type: uint32_t
     initial_value: "0"
-  - id: last_sent_ha_pos
-    type: int
-    initial_value: "-1"
-  - id: updating_from_ha
-    type: bool
-    initial_value: "false"
-  - id: track_w
-    type: int
-    initial_value: "100"
-  - id: track_h
-    type: int
-    initial_value: "215"
 
 script:
   - id: debounce_shade
@@ -146,15 +131,14 @@ sensor:
     entity_id: cover.right_window_shade
     attribute: current_position
     on_value:
+      - lambda: 'id(ha_pos_cache) = (int)x;'
       - if:
           condition:
             lambda: 'return (millis() - id(last_send_ms)) > 2000;'
           then:
-            - lambda: 'id(updating_from_ha) = true;'
             - lvgl.slider.update:
                 id: shade_slider
                 value: !lambda "return 100 - (int)x;"
-            - lambda: 'id(updating_from_ha) = false;'
 
 binary_sensor:
   - platform: gpio
@@ -170,11 +154,9 @@ binary_sensor:
           condition:
             lambda: 'return id(ha_shade_position).has_state();'
           then:
-            - lambda: 'id(updating_from_ha) = true;'
             - lvgl.slider.update:
                 id: shade_slider
                 value: !lambda "return 100 - (int)id(ha_shade_position).state;"
-            - lambda: 'id(updating_from_ha) = false;'
     on_release:
       - light.turn_off: display_backlight
 
@@ -245,7 +227,9 @@ lvgl:
             on_value:
               - if:
                   condition:
-                    lambda: 'return !id(updating_from_ha);'
+                    lambda: |-
+                      int cover_pos = 100 - (int)x;
+                      return cover_pos != id(ha_pos_cache);
                   then:
                     - lambda: 'id(last_send_ms) = millis();'
                     - script.execute:
